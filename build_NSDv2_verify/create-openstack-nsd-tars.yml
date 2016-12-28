@@ -1,0 +1,110 @@
+---
+-
+  hosts: build
+  sudo: true
+  tasks:
+    -
+      block:
+        - 
+          name: "get the latest image directory"
+          register: image_dir
+          shell: "ls -t {{images_directory}} | grep images | sed -n '1p'"
+        - 
+          debug: "msg={{image_dir.stdout}}"
+
+        - 
+          find: "paths={{images_directory}}/{{image_dir.stdout}} patterns=\"*openstack-nfp*\" recurse=yes"
+          name: "Find the openstack-nfp tar"
+          register: openstack_nfp_tar_path
+
+        - 
+          debug: "msg={{openstack_nfp_tar_path.files[0].path}}"
+
+        - 
+          find: "paths={{images_directory}}/{{image_dir.stdout}} patterns=\"*openstack-nsd-[0-9]*.rpm\" recurse=yes"
+          name: "Find the openstack-nsd rpm "
+          register: openstack_nsd_rpm_path
+        - 
+          debug: "msg={{openstack_nsd_rpm_path.files[0].path}}"
+
+        - 
+          find: "paths={{images_directory}}/{{image_dir.stdout}} patterns=\"*openstack-nsd-sslvpn*.rpm\" recurse=yes"
+          name: "Find the openstack-nsd-sslvpn rpm "
+          register: nsd_sslvpn_rpm_path
+        - 
+          debug: "msg={{nsd_sslvpn_rpm_path.files[0].path}}"
+
+        -
+          name: "Find oc-gbpui-extensions rpm"
+          find: "paths={{images_directory}}/{{image_dir.stdout}} patterns=\"*oc-gbpui-extensions*.rpm\" recurse=yes"
+          register: oc_gbpui_rpm_path
+
+        -
+          debug: "msg={{oc_gbpui_rpm_path.files[0].path}}"
+
+
+        - 
+          args:
+            chdir: "{{images_directory}}/{{image_dir.stdout}}"
+          name: "build openstack-nsd-packages tar"
+          shell: "tar -czf openstack-nsd-packages-{{nsd_version}}.tar.gz \"{{openstack_nfp_tar_path.files[0].path}}\" \"{{openstack_nsd_rpm_path.files[0].path}}\" \"{{nsd_sslvpn_rpm_path.files[0].path}}\" \"{{oc_gbpui_rpm_path.files[0].path}}\""
+
+        - 
+          args:
+            chdir: "{{images_directory}}/{{image_dir.stdout}}"
+          name: "create NSD images directory structure"
+          shell: "mkdir -p NSD_Images_{{nsd_version}}/{{item}}"
+          with_items:
+            - images
+            - service_images
+
+        - 
+          name: "copy nsd_controller qcow image into NSD_images/images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/nsd_controller.qcow2 {{images_directory}}/{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/images/"
+
+        - 
+          name: "copy vyos haproxy asav image into NSD_images/service_images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/{{item}} {{images_directory}}/{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/service_images/"
+          with_items:
+            - asav.qcow2
+            - haproxy_lbaasv2.qcow2
+            - vyos.qcow2
+            - haproxy_lbaasv1.qcow2
+
+        - 
+          name: "copy vyos haproxy keys into NSD_images/service_images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/*.key {{images_directory}}/{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/service_images/"
+
+        - 
+          name: "copy setup_nsd_images.sh into NSD_images"
+          shell: "cp {{asav_lbaasv2_path}}/setup_nsd_images.sh {{images_directory}}/{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/"
+
+        - 
+          args:
+            chdir: "{{images_directory}}/{{image_dir.stdout}}"
+          name: "build openstack-nsd-images tar"
+          shell: "tar -czf openstack-nsd-images-{{nsd_version}}.tar.gz {{images_directory}}/{{image_dir.stdout}}/NSD_Images_{{nsd_version}}"
+
+        - 
+          name: "check whether nsd_install_directory exist or not"
+          register: p
+          stat: "path={{nsd_install_dir}}"
+        - 
+          debug: "msg=\"nsd_install directory already exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          file: "path=\"{{nsd_install_dir}}\" state=absent"
+          name: "delete existing nsd_install_dir"
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          name: "Create nsd_install_directory"
+          shell: "mkdir -p {{nsd_install_dir}}"
+ 
+        - 
+          name: "copy openstack_nsd tar files to nsd_tars"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/{{item}} {{nsd_install_dir}}"
+          with_items:
+            - openstack-nsd-images-{{nsd_version}}.tar.gz
+            - openstack-nsd-packages-{{nsd_version}}.tar.gz
+ 
+      when: create_openstack_nsd_tars == "true"

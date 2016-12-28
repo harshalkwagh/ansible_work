@@ -1,0 +1,38 @@
+[all]
+
+[all:vars]
+
+deploy_nfp = true
+pre_req = true
+cleanup_nfp = true
+upgrade_to_nsd = true
+verify_nsd = true
+downgrade_to_nfp = false
+ACI_setup = false
+
+# Paths from where copy packages and images tar files  (ideally on build machine)
+openstack_nsd_packages_tar = "/opt/images/nsd_tars_16Dec2016/openstack-nsd-packages-2.2.1-0.tar.gz"
+openstack_nsd_images_tar = "/opt/images/nsd_tars_16Dec2016/openstack-nsd-images-2.2.1-0.tar.gz"
+# Path to create a directory for copying all tarballs on to the setup.
+nsd_install_dir = /root/nsd_tars
+
+openstack_nfp_images_tar = /opt/nfp_images/nfp_tars/Openstack-nf-images-2.0.0.21.tar.gz
+nfp_install_dir = /root/nfp_install/
+
+[build]
+192.168.200.21 ansible_connection=ssh ansible_ssh_user=root ansible_ssh_private_key_file=/root/.ssh/id_rsa
+
+
+[controller]
+192.168.200.11  ansible_connection=ssh ansible_ssh_user=root ansible_ssh_private_key_file=/root/.ssh/id_rsa
+
+[networknode]
+192.168.200.11  ansible_connection=ssh ansible_ssh_user=root ansible_ssh_private_key_file=/root/.ssh/id_rsa
+
+[controller:vars]
+
+os_password=neutron_pass
+os_region_name=RegionOne
+os_tenant_name=services
+os_username=neutron
+

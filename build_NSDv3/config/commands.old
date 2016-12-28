@@ -1,0 +1,5 @@
+git clone https://pvellanki:1hyderabad@github.com/oneconvergence/nfp-build.git -b stable/liberty;
+mkdir -p nfp-build/images;
+cd /nfp/nfp-build ;
+./build_nfp_package.sh --nfp_branch=liberty_nfp_14_june_2016_oslo_perf_patches --build_version=2.0.0 --release_version=1 --git_username=pvellanki --git_password=1hyderabad --images_dir=../build-images ;
+cp Openstack* ../build-images ;

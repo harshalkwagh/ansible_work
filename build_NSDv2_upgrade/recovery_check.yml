@@ -1,0 +1,144 @@
+--- 
+- 
+  hosts: "controller[0]"
+
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get nsd_controllerVM_instance pt id "
+          register: gbp_pt_id
+          shell: "gbp pt-list | grep nsd_controller | cut -d' ' -f2"
+
+        - debug: msg="gbp_pt_id for nsd_controllerVM_instance {{gbp_pt_id.stdout}}"
+
+        - 
+          name: "Delete nsd_controllerVM_instance pt"
+          shell: "gbp pt-delete {{gbp_pt_id.stdout}}"
+
+        - 
+          name: "get nova keypair name for nsd_controller"
+          register: nova_keypair_id
+          shell: "nova keypair-list | grep nsd_controller | cut -d' ' -f2"
+
+        - debug: msg="nsd_controller nova-keypair ID {{nova_keypair_id.stdout}}"
+
+        - 
+          name: "Delete nsd_controller keypair"
+          shell: "nova keypair-delete {{nova_keypair_id.stdout}}"
+
+        - 
+          name: "get nsd_controllerVM_instance ID"
+          register: nsd_controllerVM_ID
+          shell: "nova list | grep nsd_controller | cut -d' ' -f2"
+
+        - debug: msg="nsd_controllerVM_instance ID {{nsd_controllerVM_ID.stdout}}"
+
+        - 
+          name: "Delete nsd_controllerVM_instance"
+          shell: "nova delete {{nsd_controllerVM_ID.stdout}}"
+
+        - 
+          name: "Delete nsd_controller key file"
+          shell: "rm /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/keys/nsd_controller.pem"
+          ignore_errors: true
+
+        - 
+          name: "get glance image id for nsd_controller"
+          register: nsd_controller_image_ID
+          shell: "glance image-list | grep nsd_controller | cut -d' ' -f2"
+
+        - debug: msg="nsd_controller glance image ID {{nsd_controller_image_ID.stdout}}"
+
+        - 
+          name: "Delete nsd_controller glance image"
+          shell: "glance image-delete {{nsd_controller_image_ID.stdout}}"
+
+        - 
+          name: "get neutron security-group ID for keystone_allow"
+          register: security_group_ID
+          shell: "neutron security-group-list | grep keystone_allow | cut  -d' ' -f2"
+
+        - debug: msg="security group ID {{security_group_ID.stdout}}"
+
+        - 
+          name: "Delete neutron security-group"
+          shell: "neutron security-group-delete {{security_group_ID.stdout}}"
+
+
+        - find: "paths={{nsd_install_dir}} patterns=*NSD_Images* recurse=yes file_type=directory"
+          name: "Find the NSD_images directory"
+          register: NSD_images_path
+
+        - debug: "msg={{NSD_images_path.files[0].path}}"
+
+        -
+          find: "paths={{NSD_images_path.files[0].path}} patterns=\"*nsd_controller*.qcow2\" recurse=yes"
+          name: "Find the nsd_controller qcow image"
+          register: nsd_controller
+        -
+          debug: "msg={{nsd_controller.files[0].path}}"
+        -
+          args:
+            chdir: "{{NSD_images_path.files[0].path}}"
+          name: "Launch NSD Controller VM"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd.py --launch-controller --nsd-controller-image-path {{nsd_controller.files[0].path}}"
+
+        - pause: seconds=30
+
+        -
+          name: "find controller VM ip"
+          register: nsd_controller_VM_ip
+          shell: neutron port-list | grep controller | cut -d'"' -f8
+        -
+          debug: msg="{{nsd_controller_VM_ip.stdout}}"
+
+        -
+          name: "Update NSD Controller VM IP in /etc/nfp.ini file"
+          shell: "crudini --set /etc/nfp.ini PROXY nfp_controller_ip {{nsd_controller_VM_ip.stdout}}"
+        -
+          name: "restart proxy services"
+          shell: "systemctl restart nfp_proxy"
+        -
+          name: "restart proxy_agent services"
+          shell: "systemctl restart nfp_proxy_agent"
+
+        - debug: msg="Recovery is Done Checking for Health"
+
+        - pause: seconds=100
+
+        - 
+          name: "check nsd_controllerVM status"
+          register: controller_status
+          shell: "nova list | grep nsd_controllerVM | cut -d' ' -f6"
+        - 
+          debug: msg="nsd_controllerVM status is {{controller_status.stdout}}"
+        - 
+          block: 
+            - name: "check wether npf-proxy is able to connect to nsd_controllerVM or not"
+              shell: ip netns exec nfp-proxy ncat -i 1s -v {{nsd_controller_VM_ip.stdout}} 8070 2>&1 | grep -c Connected
+              register: res
+              ignore_errors: true
+
+            - debug: "msg=\"RECOVERY SUCCESS\""
+              when: "res.stdout == \"1\""
+
+            - fail:
+                msg: "ERROR: Unable to connect to controllerVM... Please contact OneConcergence Devices"
+              when: "res.stdout != \"1\""
+
+          when: "controller_status.stdout == \"ACTIVE\""
+
+        - fail:
+            msg: "ERROR: nsd_controllerVM is NOT ACTIVE.... Please contact OneConcergence Devices"
+          when: "controller_status.stdout != \"ACTIVE\""
+
+      when: "recover_nsd == 'true'"
+

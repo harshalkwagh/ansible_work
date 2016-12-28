@@ -1,0 +1,19 @@
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+  - block:
+        - 
+          name: "get the latest image directory"
+          register: image_dir
+          shell: "ls -t {{images_directory}} | grep images | sed -n '1p'"
+        - 
+          debug: "msg={{image_dir.stdout}}"
+        - 
+          set_fact: "image_install_directory={{images_directory}}/{{image_dir.stdout}}"
+        - 
+          debug: "msg={{image_install_directory}}"
+        - 
+          synchronize: "mode=pull src={{image_install_directory}} dest={{images_directory}}/tmp/"
+    when: "copy_images_to_jenkins == 'true'"

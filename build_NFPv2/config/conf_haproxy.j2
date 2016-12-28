@@ -1,0 +1,21 @@
+{
+    "git":
+        {
+            "username":"{{ git_username }}",
+            "password":"{{ git_password }}",
+            "tag":"4.0",
+            "rel": 0,
+            "service_vm_agents_branch": "master"
+        },
+    "dib":
+        {
+            "image_size":10,
+    	    "elements": ["haproxy", "rm-cloud-init", "root-passwd"],
+            "root_pswd":"oc@sc!23;)",
+            "offline": true
+        },
+    "ubuntu_release":
+        {
+	        "release":"trusty"
+        }
+}

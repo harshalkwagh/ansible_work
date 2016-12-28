@@ -1,0 +1,25 @@
+{
+    "git":
+        {
+            "username":"{{ git_username }}",
+            "password":"{{ git_password }}",
+            "tag":"4.0",
+            "rel": 0,
+            "visibility_branch": "{{ visibility_branch }}"
+        },
+    "dib":
+        {
+            "image_size":10,
+    	    "elements": ["visibility", "root-passwd"],
+            "root_pswd":"oc@sc!23;)",
+            "offline": true
+        },
+    "ubuntu_release":
+        {
+	    "release":"trusty"
+        },
+    "url":
+        {
+            "DOCKER_IMAGES_URL":"http://192.168.100.50/docker_images/"
+        }
+}

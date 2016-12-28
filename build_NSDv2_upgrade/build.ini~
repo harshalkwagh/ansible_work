@@ -1,0 +1,33 @@
+[all]
+accelerate
+[all:vars]
+build_images = true
+build_rpms = true
+build_license = false
+copy_images_to_jenkins = true
+
+deploy_rpms = false
+deploy_atf = false
+os_version = mitaka
+create_openstack_nsd_tars = true
+
+image_build_directory = "/opt/nsd_build"
+images_directory = "/opt/images"
+nsd_version = "2.2.1-0"
+nsd_install_dir = "/opt/images/nsd_tars"
+asav_lbaasv2_path = "/opt/images/asav_lbaasv2_images"
+#image_install_directory = "/root/liberty_gbp_rpms-nfp"
+
+[build]
+192.168.200.21 ansible_connection=ssh ansible_ssh_user=root ansible_ssh_private_key_file=./id_rsa
+
+[run]
+192.168.2.174 ansible_connection=ssh ansible_ssh_user=root ansible_ssh_private_key_file=./id_rsa
+
+[build:vars]
+git_username = rayalaman
+git_password = ra2291987
+gbp_branch = "master"
+visibility_branch = "master"
+nsd_gbp_branch = "NSD_V2"
+service_vm_agents_branch = "service-vm-agents-ha-integration"

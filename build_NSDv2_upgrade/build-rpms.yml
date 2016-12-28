@@ -1,0 +1,73 @@
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+          when: "timestamp is not defined"
+        - 
+          debug: "msg={{timestamp}}"
+    - 
+      block: 
+        - 
+          block: 
+            - 
+              set_fact: "image_install_directory={{images_directory}}/images.{{timestamp}}"
+            - 
+              debug: "msg={{timestamp}}"
+            - 
+              debug: "msg={{ image_build_directory }}"
+            - 
+              debug: "msg={{ image_install_directory }}"
+            - 
+              name: "Make the root build directory"
+              shell: "mkdir -p {{ image_build_directory }}"
+            - 
+              name: "Make the root install directory"
+              shell: "mkdir -p {{ image_install_directory }}"
+
+            - 
+              block: 
+                - 
+                  name: "get the latest image directory"
+                  register: image_dir
+                  shell: "ls -t {{images_directory}}| grep images | sed -n '2p'"
+                - 
+                  debug: "msg={{image_dir.stdout}}"
+                - 
+                  name: "copy files from latest image directory if images were not built during this build"
+                  shell: "cp {{images_directory}}/{{image_dir.stdout}}/* {{image_install_directory}}/."
+              when: " copy_existing_images == 'true'"
+
+        - 
+          name: "Make rpm-build directory"
+          shell: "mkdir -p {{images_directory}}/rpm-build.{{timestamp}}"
+        - 
+          copy: "src=config/commands-rpms dest={{images_directory}}/rpm-build.{{timestamp}}"
+          name: "Copy docker commands file,"
+        - 
+          args: 
+            chdir: "{{images_directory}}/rpm-build.{{timestamp}}"
+          name: "build rpms"
+          register: cmd_log
+          shell: "cat commands-rpms | docker run -i --name nfp_gbp_builder.ans  --rm -v ${PWD}:/nfp nfp-gbp-rpm-builder"
+
+        - debug: msg="{{cmd_log.stdout_lines}}"
+        - 
+          args: 
+            chdir: "{{image_install_directory}}"
+          name: "move the RPMs"
+          shell: "cp {{images_directory}}/rpm-build.{{timestamp}}/*.* ."
+        - 
+          name: "remove rpm-build directory"
+          shell: "rm -rf {{images_directory}}/rpm-build.{{timestamp}}"
+
+      when: "build_rpms == 'true'"
+

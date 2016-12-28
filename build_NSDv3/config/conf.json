@@ -1,0 +1,16 @@
+{
+    "git":
+        {
+            "username":"mabaig043",
+            "password":"aijaz.baig.123",
+	    "tag":"4.0",
+	    "rel": 0,
+            "git_path_service-controller": ["/opt/nfp-build/service-controller", "sc-1.0-SG-dib"],
+            "git_path_group-based-policy":["/opt/nfp-build/group-based-policy", "liberty_nfp_14_june_2016_oslo_perf_patches"]
+        },
+    "packer":
+        {
+            "image_size":4,
+            "vyos_pswd":"oc@sc!23;)"
+        }
+}

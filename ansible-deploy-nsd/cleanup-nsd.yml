@@ -1,0 +1,210 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+# Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+########################################################################    
+
+
+
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+- 
+  hosts: "controller[0]"
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks: 
+    - 
+      block: 
+        - 
+          ignore_errors: true
+          name: "stop nfp_config_orch"
+          shell: "systemctl stop nfp_config_orch"
+        - 
+          ignore_errors: true
+          name: "stop nfp_orchestrator"
+          shell: "systemctl stop nfp_orchestrator"
+
+        -
+          name: "check whether nsd_install_directory exist or not"
+          register: p
+          stat: "path={{nsd_install_dir}}"
+
+        -
+          debug: "msg=\"nsd_install directory exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+
+        -
+          fail: "msg=\"nsd_install directory does not exist, cant do cleanup\""
+          when: "p.stat.isdir is not defined"
+
+        - 
+          find: "paths={{nsd_install_dir}} patterns=*NSD_Images* recurse=yes file_type=directory"
+          name: "Find the NSD-images directory"
+          register: NSD_images_path
+
+        - 
+          debug: "msg={{NSD_images_path.files[0].path}}"
+        - 
+          args: 
+            chdir: "{{NSD_images_path.files[0].path}}"
+          ignore_errors: true
+          name: "Cleanup nsd_images"
+          shell: "bash setup_nsd_images.sh --operation=cleanup"
+        - 
+          ignore_errors: true
+          name: "destroy controller"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd.py --destroy-controller"
+
+        - name: "Remove HA resources"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd.py --remove-ha-resources"
+          ignore_errors: true
+        - 
+          name: "cleanup nfp"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --clean-up"
+
+        - pause: seconds=120
+
+        - 
+          ignore_errors: true
+          name: "remove heat_stack_role"
+          shell: "openstack role remove --project services --user neutron heat_stack_owner"
+      when: "cleanup_setup == 'true'"
+- 
+  hosts: controller
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks: 
+    - 
+      block: 
+        - 
+          ignore_errors: true
+          name: "Uninstall openstack-nsd-sslvpn rpm"
+          shell: "rpm -e openstack-nsd-sslvpn"
+
+        - 
+          ignore_errors: true
+          name: "Uninstall openstack-nsd rpm"
+          shell: "rpm -e openstack-nsd"
+
+        -
+          name: "check whether nsd_install_directory exist or not"
+          register: p
+          stat: "path={{nsd_install_dir}}"
+
+        -
+          debug: "msg=\"nsd_install directory exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+
+        -
+          fail: "msg=\"nsd_install directory does not exist, cant do cleanup\""
+          when: "p.stat.isdir is not defined"
+
+        - 
+          args: 
+            chdir: "{{nsd_install_dir}}/openstack-nfp"
+          ignore_errors: true
+          name: "Uninstall nfp"
+          shell: "bash uninstall_nfp.sh"
+      when: "cleanup_setup == 'true'"
+- 
+  hosts: network
+  tasks: 
+    - 
+      set_fact: "OSC={{ hostvars[groups['controller'][0]]['inventory_hostname']}}"
+    - 
+      set_fact: "NC={{ hostvars[groups['network'][0]]['inventory_hostname']}}"
+    - 
+      debug: "msg={{OSC}}"
+    - 
+      debug: "msg={{NC}}"
+    - 
+      block: 
+        - 
+          ignore_errors: true
+          name: "stop nfp_proxy"
+          shell: "systemctl stop nfp_proxy"
+        - 
+          ignore_errors: true
+          name: "stop nfp_proxy_"
+          shell: "systemctl stop nfp_proxy_agent"
+        - 
+          block: 
+            - 
+              ignore_errors: true
+              name: "Uninstall openstack-nsd rpm"
+              shell: "rpm -e openstack-nsd"
+
+            -
+              name: "check whether nsd_install_directory exist or not"
+              register: p
+              stat: "path={{nsd_install_dir}}"
+
+            -
+              debug: "msg=\"nsd_install directory exist\""
+              when: "p.stat.isdir is defined and p.stat.isdir"
+
+            -
+              fail: "msg=\"nsd_install directory does not exist, cant do cleanup\""
+              when: "p.stat.isdir is not defined"
+
+            -
+              name: "check whether nsd_install_directory exist or not"
+              register: p
+              stat: "path={{nsd_install_dir}}"
+
+            -
+              debug: "msg=\"nsd_install directory exist\""
+              when: "p.stat.isdir is defined and p.stat.isdir"
+
+            -
+              fail: "msg=\"nsd_install directory does not exist, cant do cleanup\""
+              when: "p.stat.isdir is not defined"
+
+            - 
+              args: 
+                chdir: "{{nsd_install_dir}}/openstack-nfp"
+              ignore_errors: true
+              name: "Uninstall nfp"
+              shell: "bash uninstall_nfp.sh"
+          when: "OSC != NC"
+      when: "cleanup_setup == 'true'"

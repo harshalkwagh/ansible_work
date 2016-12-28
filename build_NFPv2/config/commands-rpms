@@ -1,0 +1,48 @@
+# group-based-policy
+cd /nfp
+git clone https://github.com/group-policy/gbp-packages.git -b master
+git clone https://github.com/openstack/group-based-policy.git -b stable/mitaka
+
+cp -r gbp-packages/group-based-policy/rpm group-based-policy/
+cd group-based-policy/
+chmod +x rpm/build-rpm.sh
+rpm/build-rpm.sh
+mv rpmbuild/RPMS/noarch/*.rpm /nfp
+cd /nfp
+rm -rf group-based-policy
+
+
+# group-based-policy-ui
+cd /nfp
+git clone https://github.com/openstack/group-based-policy-ui.git -b stable/mitaka
+cp -r gbp-packages/group-based-policy-ui/rpm group-based-policy-ui/
+cd group-based-policy-ui/
+chmod +x rpm/build-rpm.sh
+rpm/build-rpm.sh
+mv rpmbuild/RPMS/noarch/*.rpm /nfp
+cd /nfp
+rm -rf group-based-policy-ui
+
+# group-based-policy-automation
+cd /nfp
+git clone https://github.com/openstack/group-based-policy-automation.git -b stable/mitaka
+cp -r gbp-packages/group-based-policy-automation/rpm group-based-policy-automation/
+cd group-based-policy-automation/
+chmod +x rpm/build-rpm.sh
+rpm/build-rpm.sh
+mv rpmbuild/RPMS/noarch/*.rpm /nfp
+cd /nfp
+rm -rf group-based-policy-automation
+
+# python-group-based-policy-client
+cd /nfp
+git clone https://github.com/openstack/python-group-based-policy-client.git -b stable/mitaka
+cp -r gbp-packages/python-group-based-policy-client/rpm python-group-based-policy-client/
+cd python-group-based-policy-client/
+chmod +x rpm/build-rpm.sh
+rpm/build-rpm.sh
+mv rpmbuild/RPMS/noarch/*.rpm /nfp
+cd /nfp
+rm -rf python-group-based-policy-client
+
+rm -rf gbp-packages group-based-policy

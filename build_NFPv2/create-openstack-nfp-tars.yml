@@ -1,0 +1,70 @@
+---
+-
+  hosts: build
+  sudo: true
+  tasks:
+    -
+      block:
+        - 
+          name: "get the latest image directory"
+          register: image_dir
+          shell: "ls -t {{images_directory}} | grep images. | sed -n '1p'"
+        - 
+          debug: "msg={{image_dir.stdout}}"
+
+        - 
+          args:
+            chdir: "{{images_directory}}/{{image_dir.stdout}}"
+          name: "create NFP packages directory structure"
+          shell: "mkdir -p NFP_Packages_{{nfp_version}}/{{item}}"
+          with_items:
+            - images
+            - service_images
+
+        - 
+          name: "copy nfp_configurator qcow image into NFP_Packages/images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/nfp_configurator.qcow2 {{images_directory}}/{{image_dir.stdout}}/NFP_Packages_{{nfp_version}}/images/"
+
+        - 
+          name: "copy vyos and haproxy image into NFP_Packages/service_images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/{{item}} {{images_directory}}/{{image_dir.stdout}}/NFP_Packages_{{nfp_version}}/service_images/"
+          with_items:
+            - vyos.qcow2
+            - haproxy.qcow2
+
+        - 
+          name: "copy vyos haproxy keys into NFP_Packages/service_images"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/*.key {{images_directory}}/{{image_dir.stdout}}/NFP_Packages_{{nfp_version}}/service_images/"
+
+        - 
+          name: "copy setup_nf_images.sh into NFP_Packages"
+          shell: "cp {{service_images_path}}/setup_nf_images.sh {{images_directory}}/{{image_dir.stdout}}/NFP_Packages_{{nfp_version}}/"
+
+        - 
+          args:
+            chdir: "{{images_directory}}/{{image_dir.stdout}}"
+          name: "build Openstack-nf-images tar"
+          shell: "tar -czf Openstack-nf-images-{{nfp_version}}.tar.gz {{images_directory}}/{{image_dir.stdout}}/NFP_Packages_{{nfp_version}}"
+
+        - 
+          name: "check whether nfp_install_directory exist or not"
+          register: p
+          stat: "path={{nfp_install_dir}}"
+        - 
+          debug: "msg=\"nfp_install directory already exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          file: "path=\"{{nfp_install_dir}}\" state=absent"
+          name: "delete existing nfp_install_dir"
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          name: "Create nfp_install_directory"
+          shell: "mkdir -p {{nfp_install_dir}}"
+ 
+        - 
+          name: "copy openstack_nfp images tar files to nfp_tars"
+          shell: "cp {{images_directory}}/{{image_dir.stdout}}/{{item}} {{nfp_install_dir}}"
+          with_items:
+            - Openstack-nf-images-2.0.0.21.tar.gz
+
+      when: create_openstack_nfp_tar == "true"

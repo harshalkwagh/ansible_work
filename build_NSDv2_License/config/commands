@@ -1,0 +1,34 @@
+cd /nfp
+git clone https://github.com/openstack/group-based-policy.git -b stable/liberty
+
+
+cd /nfp
+git clone https://github.com/noironetworks/gbp-rpm-spec.git -b liberty
+cp -r gbp-rpm-spec/group-based-policy/rpm/ group-based-policy
+cd group-based-policy/
+mv rpm/build-rpm.sh .
+./build-rpm.sh 
+cd /nfp
+mv /nfp/group-based-policy/rpmbuild/RPMS/noarch/*  /nfp/.
+git clone https://github.com/openstack/group-based-policy-ui.git -b stable/liberty
+cp -r gbp-rpm-spec/group-based-policy-ui/rpm/ group-based-policy-ui/
+cd group-based-policy-ui/
+mv rpm/build-rpm.sh .
+./build-rpm.sh 
+mv /nfp/group-based-policy-ui/rpmbuild/RPMS/noarch/* /nfp/.
+cd /nfp
+git clone https://github.com/openstack/python-group-based-policy-client.git -b stable/liberty
+cp -r gbp-rpm-spec/python-group-based-policy-client/rpm python-group-based-policy-client/
+cd python-group-based-policy-client/
+mv rpm/build-rpm.sh .
+./build-rpm.sh 
+mv /nfp/python-group-based-policy-client/rpmbuild/RPMS/noarch/* /nfp/.
+cd /nfp
+git clone https://github.com/openstack/group-based-policy-automation.git -b stable/liberty
+cp -r gbp-rpm-spec/group-based-policy-automation/rpm/ group-based-policy-automation/
+cd group-based-policy-automation/
+mv rpm/build-rpm.sh .
+./build-rpm.sh 
+mv /nfp/group-based-policy-automation/rpmbuild/RPMS/noarch/* /nfp/.
+cd /nfp
+rm -rf group-based-policy-automation python-group-based-policy-client group-based-policy-ui group-based-policy gbp-rpm-spec

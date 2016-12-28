@@ -1,0 +1,104 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                                           # Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+#            Deekshith Patnala [deekshith.patnala@oneconvergence.com]  #                                            
+########################################################################    
+
+---
+-
+  hosts: build
+  sudo: true
+  tasks:
+    -
+      block:
+        -
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        -
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    -
+      debug: "msg={{timestamp}}"
+
+-
+  hosts: controller
+  tasks:
+
+    -
+      block:
+        -
+          environment:
+            OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+            OS_PASSWORD: "{{os_password}}"
+            OS_REGION_NAME: "{{os_region_name}}"
+            OS_TENANT_NAME: "{{os_tenant_name}}"
+            OS_USERNAME: "{{os_username}}"
+          name: find controller VM ip
+          register: nsd_controller_VM_ip
+          shell: "neutron port-list | grep controller | cut -d'\"' -f8"
+        -
+          debug: "msg=\"{{nsd_controller_VM_ip.stdout}}\""
+        -
+          set_fact: controller_ip={{ nsd_controller_VM_ip.stdout }}
+        -
+          debug: msg={{controller_ip}}
+
+        -
+          name: copy license.json file to configurator vm
+          shell: "ip netns exec nfp-proxy scp -o StrictHostKeyChecking=no -i /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/keys/nsd_controller.pem {{license_json_path}} admin@{{controller_ip}}:"
+
+        -
+          name: extracting name of json file
+          shell: basename {{license_json_path}}
+          register: json_file
+
+        -
+          set_fact: json_file_name={{ json_file.stdout }}
+
+        -
+          debug: msg={{json_file_name}}
+
+        -
+          find: "paths={{nsd_install_dir}} patterns=\"*license_utility*.sh\" recurse=yes"
+          name: Find license_utility.sh file
+          register: license_utility_path
+
+        -
+          debug: msg={{license_utility_path.files[0].path}}
+
+        -
+          name: copy license_utility.sh to configurator vm
+          shell: "ip netns exec nfp-proxy scp -o StrictHostKeyChecking=no -i /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/keys/nsd_controller.pem {{license_utility_path.files[0].path}} admin@{{controller_ip}}:"
+
+        -
+          name: upload license
+          shell: ip netns exec nfp-proxy ssh -o StrictHostKeyChecking=no -i /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/keys/nsd_controller.pem admin@{{controller_ip}} bash license_utility.sh post {{controller_ip}} {{json_file_name}}
+          register: res
+        - debug: msg="{{res.stdout_lines}}"
+
+
+        - name: check license
+          shell: ip netns exec nfp-proxy ssh -o StrictHostKeyChecking=no -i /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/keys/nsd_controller.pem admin@{{controller_ip}} bash license_utility.sh get {{controller_ip}}
+          register: res
+        - debug: msg="{{res.stdout_lines}}"
+
+
+      when: "install_license == 'true'"
+

@@ -1,0 +1,17 @@
+---
+
+- hosts: controller
+  sudo: True
+  tasks:
+  - block: 
+
+    - name: get external interface ID
+      shell:  ip a | grep {{ inventory_hostname }} | awk '{print $7}'
+      register: ext_interface_data
+    - debug: var=groups['controller'][0]
+    - set_fact: ext_interface={{ext_interface_data.stdout}}
+    - debug: var=ext_interface 
+    - name: move the ifcfg-interface file
+      template: src=ifcfg-eth.j2 dest=/etc/sysconfig/network-scripts/ifcfg-{{ext_interface}}
+    - name: move the ifcfg-brex interface file
+      template: src=ifcfg-brex.j2 dest=/etc/sysconfig/network-scripts/ifcfg-brex

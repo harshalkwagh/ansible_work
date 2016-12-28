@@ -1,0 +1,115 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+# Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NFP Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+#            Deekshith Patnala [deekshith.patnala@oneconvergence.com]  #                                            
+########################################################################    
+
+
+---
+
+- hosts: build
+  sudo: true
+  tasks:
+
+  - block:
+    - name: get timestamp
+      shell: "date +%F_%T | tr : -"
+      register: ts
+    - set_fact: timestamp={{ts.stdout}}
+    when: timestamp is not defined
+  - debug: msg={{timestamp}}
+
+- hosts: controller
+  tasks:
+
+  - block:
+
+    -
+      name: stop nfp_config_orch services
+      shell: systemctl stop nfp_config_orch
+
+    -
+      name: stop nfp_orchestrator services
+      shell: systemctl stop nfp_orchestrator
+
+    -
+      find: "paths={{nfp_install_dir}} patterns=*NFP_Packages* recurse=yes file_type=directory"
+      name: Find the NFP-packages directory
+      register: NFP_packages_path
+
+    - debug: "msg={{NFP_packages_path.files[0].path}}"
+
+    -
+      args:
+        chdir: "{{NFP_packages_path.files[0].path}}"
+      name: Delete NFP Images from OpenStack glance
+      shell: bash setup_nf_images.sh --operation=cleanup
+
+    -
+      name: clean-up NFP
+      shell: python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --clean-up
+
+    - pause: seconds=120
+
+    -
+      environment:
+        OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+        OS_PASSWORD: "{{os_password}}"
+        OS_REGION_NAME: "{{os_region_name}}"
+        OS_TENANT_NAME: "{{os_tenant_name}}"
+        OS_USERNAME: "{{os_username}}"
+      name: check whether heat_stack_owner role exists or not
+      register: res
+      ignore_errors: True
+      shell: "openstack user role list | grep neutron | grep -c heat_stack_owner"
+
+    - debug: "msg=\"heat_stack_owner does not exist\""
+      when: "res.rc == 1"
+
+    -
+      environment:
+        OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+        OS_PASSWORD: "{{os_password}}"
+        OS_REGION_NAME: "{{os_region_name}}"
+        OS_TENANT_NAME: "{{os_tenant_name}}"
+        OS_USERNAME: "{{os_username}}"
+      name: remove heat_stack_owner role
+      shell: openstack role remove --project services --user neutron heat_stack_owner
+      when: "res.rc != 1"
+
+
+    when: cleanup_nfp == 'true'
+
+
+- hosts: networknode
+  tasks:
+
+  - block:
+
+    -
+      name: stop nfp_proxy service
+      shell: systemctl stop nfp_proxy
+
+    -
+      name: stop nfp_proxy_agent service
+      shell: systemctl stop nfp_proxy
+
+    when: cleanup_nfp == 'true'
+

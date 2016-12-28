@@ -1,0 +1,97 @@
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+#1;3409;0c Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+#            Deekshith Patnala [deekshith.patnala@oneconvergence.com]  #                                            
+########################################################################    
+
+---
+- 
+  hosts: build
+  sudo: true
+  tasks:
+    - 
+      block:
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+- 
+  hosts: "controller[0]"
+  tasks:
+    - 
+      block:
+        -
+          name: "Configure nfp_keystone_authtoken admin_user"
+          shell: "crudini --set /etc/nfp.ini nfp_keystone_authtoken admin_user `crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_user`"
+
+        -
+          name: "Configure nfp_keystone_authtoken admin_password"
+          shell: "crudini --set /etc/nfp.ini nfp_keystone_authtoken admin_password `crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_password`"
+
+        -
+          name: "Configure nfp_keystone_authtoken admin_tenant_name"
+          shell: "crudini --set /etc/nfp.ini nfp_keystone_authtoken admin_tenant_name `crudini --get /etc/neutron/neutron.conf keystone_authtoken admin_tenant_name`"
+
+        -
+          name: "Configure nfp_keystone_authtoken auth_uri"
+          shell: "crudini --set /etc/nfp.ini nfp_keystone_authtoken auth_uri `crudini --get /etc/neutron/neutron.conf keystone_authtoken auth_uri`"
+
+        -
+          name: "Configure nfp_keystone_authtoken auth_protocol"
+          shell: "crudini --set /etc/nfp.ini nfp_keystone_authtoken auth_protocol `crudini --get /etc/neutron/neutron.conf keystone_authtoken auth_uri | grep :// | cut -d':' -f1`"
+
+
+        -
+          name: "Patch orchestration_driver.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nfp/orchestrator/drivers/orchestration_driver.py
+
+        -
+          name: "Patch heat_driver.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nfp/orchestrator/config_drivers/heat_driver.py
+
+        -
+          name: "Patch __init__.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nfp/orchestrator/modules/__init__.py
+
+        -
+          name: "Patch openstack_driver.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nfp/orchestrator/openstack/openstack_driver.py
+
+        -
+          name: "Patch vpn.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nsd/config_orchestrator/handlers/config/vpn.py
+
+        -
+          name: "Patch visibility.py to support nfp_keystone_authtoken options"
+          shell: sed -i "s/keystone_authtoken/nfp_keystone_authtoken/g" /usr/lib/python2.7/site-packages/gbpservice/nsd/orchestrator/modules/visibility.py
+
+        -
+          name: restart orchestrator
+          shell: systemctl restart nfp_orchestrator
+
+        -
+          name: restart nfp_config_orch
+          shell: systemctl restart nfp_config_orch
+
+      when: "deploy_nsd == 'true'"

@@ -1,0 +1,166 @@
+---
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+
+
+- hosts: deploy
+  sudo: true
+  tasks:
+  - block: 
+
+    - name: get packstrack ID
+      shell: btrfs subvolume list / | grep -i "{{openstack_snapshot}}$" | awk '{print $2}'
+      register: snapid
+
+    - debug: var={{snapid.stdout}}
+
+    - name: set default to packstack
+      shell: btrfs subvolume set-default {{snapid.stdout}} /
+
+    - name: sync
+      shell: (sync && sync && sync)
+
+    - name: restart machine
+      shell: sleep 2 && shutdown -r now "Ansible updates triggered"
+      async: 1
+      poll: 0
+      sudo: true
+      ignore_errors: true
+
+    - name: Wait for the server to finish rebooting
+      sudo: no
+      local_action: wait_for host={{ inventory_hostname }} search_regex=OpenSSH delay=10 port=22 timeout=1000
+
+
+    - name: delete existing NFPv2-nfp snapshot
+      shell: "btrfs sub list / | grep -i NFPv2-nfp$ | awk '{print $9}' | sed 's_^_/_' | xargs btrfs sub delete"
+      ignore_errors: true
+
+
+    - name: delete existing NFPv2-gbp snapshot
+      shell: "btrfs sub list / | grep -i NFPv2-gbp$ | awk '{print $9}' | sed 's_^_/_' | xargs btrfs sub delete"
+      ignore_errors: true
+
+    - name: take snapshot
+      shell: btrfs subvolume snapshot / /snaps/NFPv2-gbp
+
+    - name: snapid
+      shell: btrfs subvolume show /snaps/NFPv2-gbp | grep -E "Object ID:" | awk '{print $3}'
+      register: snapid
+
+    - debug: var={{snapid.stdout}}
+
+    - name: snap set default
+      shell: btrfs subvolume set-default {{snapid.stdout}} /
+
+    - name: sync
+      shell: (sync && sync && sync)
+
+    - name: restart machine
+      shell: sleep 2 && shutdown -r now "Ansible updates triggered"
+      async: 1
+      poll: 0
+      sudo: true
+      ignore_errors: true
+      
+    - name: Wait for the server to finish rebooting
+      sudo: no
+      local_action: wait_for host={{ inventory_hostname }} search_regex=OpenSSH delay=10 port=22 timeout=1000
+
+    when: (deploy_snapshot == 'true') and (deploy_gbp == 'true')
+
+- hosts: controller
+  tasks:
+   - 
+     set_fact: "build_server=\"{{groups['build'][0]}}\"" 
+
+   - block: 
+
+      - synchronize: "src={{gbp_rpms_path}} dest={{gbp_install_path}}"
+        delegate_to: "{{build_server}}"
+
+      -
+        name: "Find openstack-neutron-gbp rpm"
+        find: "paths={{gbp_install_path}} patterns=\"*openstack-neutron-gbp*.rpm\" recurse=yes"
+        register: openstack_neutron_gbp
+      -
+        debug: "msg={{openstack_neutron_gbp.files[0].path}}"
+      -
+        name: "Install openstack_neutron_gbp on OS controller"
+        yum: "name={{openstack_neutron_gbp.files[0].path}} state=present"
+
+      -
+        name: "Find python-gbpclient rpm"
+        find: "paths={{gbp_install_path}} patterns=\"*python-gbpclient*.rpm\" recurse=yes"
+        register: python_gbpclient
+      -
+        debug: "msg={{python_gbpclient.files[0].path}}"
+      -
+        name: "Install python_gbpclient on OS controller"
+        yum: "name={{python_gbpclient.files[0].path}} state=present"
+
+      - name: "stop neutron-server"
+        service: name=neutron-server state=stopped
+
+      - name: "crudini add group_policy service_plugins in neutron.conf"
+        shell: crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins "`crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins`,group_policy"
+         
+      - name: crudini add implicit_policy,resource_mapping in neutron.conf
+        shell: crudini --set /etc/neutron/neutron.conf group_policy policy_drivers "implicit_policy,resource_mapping"
+
+      - name: "do some db manage to upgrade head"
+        shell: gbp-db-manage --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head
+         
+      - service: name=neutron-server state=started
+         
+      -
+        name: "Find python-django-horizon rpm"
+        find: "paths={{gbp_install_path}} patterns=\"*python-django-horizon*.rpm\" recurse=yes"
+        register: python_django_horizon
+      -
+        debug: "msg={{python_django_horizon.files[0].path}}"
+      -
+        name: "Install python_django_horizon on OS controller"
+        yum: "name={{python_django_horizon.files[0].path}} state=present"
+
+      -
+        name: "Find openstack-dashboard-gbp rpm"
+        find: "paths={{gbp_install_path}} patterns=\"*openstack-dashboard-gbp*.rpm\" recurse=yes"
+        register: openstack_dashboard_gbp
+      -
+        debug: "msg={{openstack_dashboard_gbp.files[0].path}}"
+      -
+        name: "Install openstack_dashboard_gbp on OS controller"
+        yum: "name={{openstack_dashboard_gbp.files[0].path}} state=present"
+
+      - service:  name=httpd state=restarted
+
+      -
+        name: "Find openstack-heat-gbp rpm"
+        find: "paths={{gbp_install_path}} patterns=\"*openstack-heat-gbp*.rpm\" recurse=yes"
+        register: openstack_heat_gbp
+      -
+        debug: "msg={{openstack_heat_gbp.files[0].path}}"
+      -
+        name: "Install openstack-heat-gbp on OS controller"
+        yum: "name={{openstack_heat_gbp.files[0].path}} state=present"
+
+      - name: "crudini add plugin_dirs in heat.conf"  
+        shell: crudini --set /etc/heat/heat.conf DEFAULT plugin_dirs "/usr/lib64/heat,/usr/lib/heat,/usr/lib/python2.7/site-packages/gbpautomation/heat"
+
+      - service: name=openstack-heat-engine state=restarted
+
+     when: deploy_gbp == 'true'

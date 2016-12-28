@@ -1,0 +1,117 @@
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+    - 
+      block: 
+        - 
+          set_fact: "image_install_directory={{images_directory}}/images.{{timestamp}}"
+        - 
+          set_fact: image_install_directory_set=true
+        - 
+          debug: "msg={{image_build_directory}}"
+        - 
+          debug: "msg={{image_install_directory}}"
+        - 
+          name: "Make the root build directory"
+          shell: "mkdir -p {{ image_build_directory }}"
+        - 
+          name: "Make the root install directory"
+          shell: "mkdir -p {{ image_install_directory }}"
+        - 
+          ignore_errors: true
+          name: "Remove old group-based-policy if exist"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf group-based-policy"
+        - 
+          name: "Checking out group-based-policy"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone https://github.com/openstack/group-based-policy.git -b {{ gbp_branch }}"
+        - 
+          name: "copy gbpservice to build root"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "cp -r group-based-policy/gbpservice ./"
+        - 
+          name: "copy gbpservice to image_builder"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "cp -r gbpservice group-based-policy/gbpservice/contrib/nfp/tools/image_builder/"
+        - 
+          name: "Remove gbpservice from build root"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf gbpservice/"
+        - 
+          name: "git clone neutron"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone -b stable/mitaka https://github.com/openstack/neutron.git"
+        - 
+          name: "copy neutron/neutron to image_builder"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "cp -r neutron/neutron group-based-policy/gbpservice/contrib/nfp/tools/image_builder/"
+        - 
+          name: "Remove neutron from build root"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf neutron"
+        - 
+          name: "git clone neutron-lbaas"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone -b stable/mitaka https://github.com/openstack/neutron-lbaas.git"
+        - 
+          name: "copy neutron-lbaas/neutron_lbaas to image_builder"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "cp -r neutron-lbaas/neutron_lbaas group-based-policy/gbpservice/contrib/nfp/tools/image_builder/"
+        - 
+          name: "Remove neutron from build root"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf neutron-lbaas"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/group-based-policy/gbpservice/contrib/nfp/tools/image_builder/"
+          name: "Build nfp configurator image"
+          register: cmd_log
+          shell: "python -c 'import disk_image_create as DIB; import os; DIB.cur_dir = os.getcwd(); DIB.conf[\"ubuntu_release\"] = {\"release\": \"trusty\"}; DIB.conf[\"dib\"] = {\"image_size\": 10, \"elements\": [\"configurator\", \"root-passwd\"], \"root_pswd\": \"nfp123\", \"offline\": True, \"cache_dir\": \"'$HOME'/.cache/image-create\"}; DIB.dib()'"
+        - 
+          debug: "msg=\"{{cmd_log.stdout_lines}}\""
+
+        - debug: "msg={{image_build_directory}}/group-based-policy/gbpservice/contrib/nfp/tools/image_builder/"
+        - 
+          find: "paths=\"{{image_build_directory}}/group-based-policy/gbpservice/contrib/nfp/tools/image_builder/output/\" patterns=\"*configurator*.qcow2\""
+          name: "get the nfp configurator files"
+          register: nfp_configurator
+        - 
+          debug: "var=nfp_configurator.files[0].path"
+
+        - 
+          command: "{{ item }}"
+          name: "move image files to Latest image directory"
+          with_items: 
+            - "mv {{nfp_configurator.files[0].path}} {{image_install_directory}}/nfp_configurator.qcow2"
+            - "cp {{service_images_path}}/vyos.qcow2 {{image_install_directory}}/vyos.qcow2"
+            - "cp {{service_images_path}}/haproxy.qcow2 {{image_install_directory}}/haproxy.qcow2"
+
+        - name: "copy keys to Latest image directory"
+          shell: "cp {{service_images_path}}/*.key {{image_install_directory}}"
+
+      when: "build_images == 'true'"

@@ -1,0 +1,273 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+# Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+########################################################################    
+
+
+
+
+
+
+---
+
+- hosts: build
+  sudo: true
+  tasks:
+
+  - block:
+    - name: "get timestamp"
+      shell: "date +%F_%T | tr : -"
+      register: ts
+    - set_fact: "timestamp={{ts.stdout}}"
+    when: "timestamp is not defined"
+  - debug: "msg={{timestamp}}"
+
+- hosts: controller
+  tasks:
+
+    - block:
+
+      - service: name=neutron-server state=stopped
+
+      - name: yum fwaas
+        yum: name=openstack-neutron-fwaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+
+      - name: yum python-neutron-fwaas
+        yum: name=python-neutron-fwaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum vpnaas
+        yum: name=openstack-neutron-vpnaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+
+      - name: yum python-neutron-vpnaas
+        yum: name=python-neutron-vpnaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum lbaas
+        yum: name=openstack-neutron-lbaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+
+      - name: yum lbaas
+        yum: name=python-neutron-lbaas state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum haproxy
+        yum: name=haproxy state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: neutron db-manage
+        shell: neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head
+        environment:
+          OS_USERNAME: "{{ os_username }}"
+          OS_PASSWORD: "{{ os_password }}"
+          OS_AUTH_URL: http://{{ inventory_hostname }}:5000/v2.0
+          OS_TENANT_NAME: "{{ os_tenant_name }}"
+          OS_REGION_NAME: "{{ os_region_name }}"
+
+      - name: gbp db-manage
+        shell: gbp-db-manage --config-file /usr/share/neutron/neutron-dist.conf --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugin.ini upgrade head
+        environment:
+          OS_USERNAME: "{{ os_username }}"
+          OS_PASSWORD: "{{ os_password }}"
+          OS_AUTH_URL: http://{{ inventory_hostname }}:5000/v2.0
+          OS_TENANT_NAME: "{{ os_tenant_name }}"
+          OS_REGION_NAME: "{{ os_region_name }}"
+
+      - 
+        ignore_errors: true
+        name: "check whether service provider is already configured in neutron_vpnaas.conf or not"
+        register: res
+        shell: "crudini --get /etc/neutron/neutron_vpnaas.conf service_providers service_provider"
+      - 
+        debug: "msg=\" service provider is already configured in neutron_vpnaas.conf and it is {{res.stdout}}\""
+        when: "res.rc == 0"
+      - 
+        name: "configure service provider in neutron_vpnaas.conf"
+        shell: "crudini --set /etc/neutron/neutron_vpnaas.conf service_providers service_provider \"VPN:libreswan:neutron_vpnaas.services.vpn.service_drivers.ipsec.IPsecVPNDriver:default\""
+        when: "res.rc != 0"
+
+
+      - name: comment default loadbalancer in neutron.conf
+        shell: sed -i 's/service_provider=LOADBALANCER:.*/#service_provider=LOADBALANCER:Haproxy:neutron_lbaas.services.loadbalancer.drivers.haproxy.plugin_driver.HaproxyOnHostPluginDriver:default/g'  /etc/neutron/neutron.conf
+
+      - name: start neutron-server
+        shell: service neutron-server start
+        ignore_errors: True
+        register: res
+
+      - debug: "msg=\"neutron server start failed\""
+        when: "res.rc == 1"
+
+      - name: yum crudini
+        yum: name=crudini state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum telnet
+        yum: name=telnet state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum patch
+        yum: name=patch state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+
+      - name: check if openstack-heat-gbp is installed or not
+        shell: rpm -qa | grep openstack-heat-gbp
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"openstack-heat-gbp rpm is not installed\""
+        when: "res.rc == 1"
+
+
+      - name: check if openstack-neutron-gbp is installed or not
+        shell: rpm -qa | grep openstack-neutron-gbp
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"openstack-neutron-gbp rpm is not installed\""
+        when: "res.rc == 1"
+
+      - name: check if python-gbpclient is installed or not
+        shell: rpm -qa | grep python-gbpclient
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"python-gbpclient rpm is not installed\""
+        when: "res.rc == 1"
+
+      - name: check if openstack-dashboard-gbp is installed or not
+        shell: rpm -qa | grep openstack-dashboard-gbp
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"openstack-dashboard-gbp rpm is not installed\""
+        when: "res.rc == 1"
+
+      - name: check if openstack-heat-engine is installed or not
+        shell: rpm -qa | grep openstack-heat-engine
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"openstack-heat-engine rpm is not installed\""
+        when: "res.rc == 1"
+
+      when: "pre_req == 'true'"
+
+- hosts: network
+  tasks:
+
+    - block:
+
+      - name: check if openstack-neutron-gbp is installed or not
+        shell: rpm -qa | grep openstack-neutron-gbp
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"openstack-neutron-gbp rpm is not installed\""
+        when: "res.rc == 1"
+
+      - name: check if python-gbpclient is installed or not
+        shell: rpm -qa | grep python-gbpclient
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"python-gbpclient rpm is not installed\""
+        when: "res.rc == 1"
+ 
+      - name: check if python-neutronclient is installed or not
+        shell: rpm -qa | grep python-neutronclient
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"python-neutronclient rpm is not installed\""
+        when: "res.rc == 1"
+
+      - name: yum crudini
+        yum: name=crudini state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum telnet
+        yum: name=telnet state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      - name: yum patch
+        yum: name=patch state=present
+        register: res
+        ignore_errors: True
+
+      - debug: "msg=\"check your network connectivity\""
+        when: "res.rc == 1"
+
+      when: "pre_req == 'true'"
+

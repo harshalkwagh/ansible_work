@@ -1,0 +1,84 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+# Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+#            Deekshith Patnala [deekshith.patnala@oneconvergence.com]  #                                            
+########################################################################    
+
+
+
+---
+-
+  hosts: controller
+  sudo: true
+  environment:
+     OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+     OS_PASSWORD: "{{os_password}}"
+     OS_REGION_NAME: "{{os_region_name}}"
+     OS_TENANT_NAME: "{{os_tenant_name}}"
+     OS_USERNAME: "{{os_username}}"
+
+  tasks:
+    -
+      block:
+        -
+          name: "Initialize external network"
+          shell: "neutron net-create --router:external=true --shared ext-net"
+        -
+          name: "Create external subnet"
+          shell: "neutron subnet-create --ip_version 4 --gateway {{ext_net_gateway}} --name ext-net-subnet --allocation-pool start={{ext_net_alloc_pool_start}},end={{ext_net_alloc_pool_end}} ext-net {{ext_net_address}}/24"
+        -
+          name: "get external  subnetid and create external segment"
+          shell: "subnetid=$(neutron subnet-list | grep ext-net-subnet | awk '{print $2 }'); gbp external-segment-create --ip-version 4 --external-route destination=0.0.0.0/0,nexthop={{ext_net_gateway}} --shared True --subnet_id=$subnetid --cidr {{ext_net_address}}/24 default"
+
+        -
+          name: "create NAT pool"
+          shell: "gbp nat-pool-create --ip-pool {{ext_net_address}}/24 --external-segment default --shared True default_nat_pool"
+
+        - name: set gateway to l3p_default-nfp
+          shell: "neutron router-gateway-set l3p_default-nfp ext-net"
+
+        # - name: "create external policy"
+        #   shell: "gbp external-policy-create --external-segments default --consumed-policy-rule-sets NSD-PRS=None {{ext_policy_name}}"
+
+
+      when: deploy_external_segment == 'true' and ACI_setup == 'false'
+
+
+    -
+      block:
+
+        - name: Create External Segment
+          shell: gbp external-segment-create --ip-version 4 --external-route destination=0.0.0.0/0,nexthop= --shared True {{ external_segment_name }}
+
+        - name: Create nat pool
+          shell: gbp nat-pool-create --ip-version 4 --ip-pool {{ ip_pool }} --external-segment {{ external_segment_name }} --shared True {{ nat_pool_name }}
+
+        - name: get group_policy_implicit_policy in neutron.conf
+          shell: crudini --set /etc/neutron/neutron.conf group_policy_implicit_policy default_external_segment_name {{ external_segment_name }}
+
+        - name: set group_policy_implicit_policy in neutron.conf
+          shell: crudini --set /etc/neutron/neutron.conf group_policy_implicit_policy default_external_segment_name {{ external_segment_name }}
+
+        - name: "create external policy"
+          shell: "gbp external-policy-create --external-segments {{ external_segment_name }} --consumed-policy-rule-sets NSD-PRS=None {{ext_policy_name}}"
+
+
+      when: deploy_external_segment == 'true' and ACI_setup == 'true'
+

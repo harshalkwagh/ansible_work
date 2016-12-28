@@ -1,0 +1,337 @@
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+    - 
+      block: 
+        - 
+          apt: "name=apache2 state=present"
+          name: "Install apache2 for build"
+        - 
+          set_fact: image_build_directory_set='true'
+        - 
+          block: 
+            - 
+              set_fact: image_build_directory=/opt/atf-build
+          when: "deploy_atf == 'true'"
+        - 
+          debug: "msg={{timestamp}}"
+        - 
+          set_fact: "image_install_directory={{images_directory}}/images.{{timestamp}}"
+        - 
+          set_fact: image_install_directory_set=true
+        - 
+          debug: "msg={{image_build_directory}}"
+        - 
+          debug: "msg={{image_install_directory}}"
+        - 
+          name: "Make the root build directory"
+          shell: "mkdir -p {{ image_build_directory }}"
+        - 
+          name: "Make the root install directory"
+          shell: "mkdir -p {{ image_install_directory }}"
+        - 
+          name: "Check if neutron_lbaas exists in python dist"
+          register: p
+          stat: path=/usr/lib/python2.7/dist-packages/neutron_lbaas
+        - 
+          block: 
+            - 
+              name: "checkout neutron_lbaas"
+              shell: 
+                chdir: "{{image_build_directory}}"
+                cmd: "git clone -b stable/mitaka --single-branch https://github.com/openstack/neutron-lbaas.git"
+            - 
+              name: "Copy to python dist-packages"
+              shell: 
+                chdir: "{{image_build_directory}}"
+                cmd: "cp -r neutron-lbaas/neutron_lbaas /usr/lib/python2.7/dist-packages/"
+          when: "p.stat.isdir is not defined"
+        - 
+          name: "Check if neutron_lib exists in python dist"
+          register: p
+          stat: path=/usr/lib/python2.7/dist-packages/neutron_lib
+        - 
+          block: 
+            - 
+              name: "checkout neutron-lib"
+              shell: 
+                chdir: /opt/nfp-build
+                cmd: "git clone -b stable/mitaka --single-branch https://github.com/openstack/neutron-lib.git"
+            - 
+              name: "Copy to python dist-packages"
+              shell: 
+                chdir: "{{image_build_directory}}"
+                cmd: "cp -r neutron-lib/neutron_lib /usr/lib/python2.7/dist-packages/"
+          when: p.stat.isdir is not defined
+        - 
+          name: "Check if neutron exists in python dist"
+          register: p
+          stat: path=/usr/lib/python2.7/dist-packages/neutron
+        - 
+          block: 
+            - 
+              name: "checkout neutron"
+              shell: 
+                chdir: "{{image_build_directory}}"
+                cmd: "git clone -b stable/mitaka --single-branch https://github.com/openstack/neutron.git"
+            - 
+              name: "Copy to python dist-packages"
+              shell: 
+                chdir: "{{image_build_directory}}"
+                cmd: "cp -r neutron/neutron /usr/lib/python2.7/dist-packages/"
+          when: "p.stat.isdir is not defined"
+        - 
+          name: "Check if nsd-build exists"
+          register: p
+          stat: "path={{image_build_directory}}/nsd-build"
+        - 
+          name: "remove nsd-build"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf nsd-build"
+          when: "p.stat.isdir is defined"
+
+        - name: "git clone nsd-build"
+          shell: "git clone https://{{git_username}}:{{git_password}}@github.com/oneconvergence/nsd-build.git -b master"
+          args:
+            chdir: "{{image_build_directory}}"
+        #  when: "p.stat.isdir is not defined"
+
+        - 
+          name: "Check if nsd-gbp exists"
+          register: p
+          stat: "path={{image_build_directory}}/nsd-gbp"
+        - 
+          name: "remove nsd-gbp & Always checkout new gbp"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "rm -rf nsd-gbp"
+          when: "p.stat.isdir is defined"
+        - 
+          name: "Checking out GBP"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            #cmd: "git clone https://github.com/openstack/group-based-policy.git -b {{ gbp_branch }}"
+            cmd: "git clone https://{{git_username}}:{{git_password}}@github.com/oneconvergence/nsd-gbp.git -b {{ nsd_gbp_branch }}"
+        - 
+          name: "Copy gbpservice to python dist"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            #cmd: "(rm -r /usr/lib/python2.7/dist-packages/gbpservice && cp -r group-based-policy/gbpservice /usr/lib/python2.7/dist-packages/)"
+            cmd: "(rm -r /usr/lib/python2.7/dist-packages/gbpservice && cp -r nsd-gbp/gbpservice /usr/lib/python2.7/dist-packages/)"
+        - 
+          name: "Check if diskimage-builder exists"
+          register: p
+          stat: "path={{image_build_directory}}/diskimage-builder"
+        - 
+          name: "copy diskimage-builder"
+          shell: 
+            chdir: "{{image_build_directory}}/diskimage-builder"
+            cmd: "(git pull )"
+          when: "p.stat.isdir is defined"
+        - 
+          name: "git clone diskimage-builder"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone https://github.com/openstack/diskimage-builder.git"
+          when: "p.stat.isdir is not defined"
+
+        - 
+          name: "Check if dib-utils exists"
+          register: p
+          stat: "path={{image_build_directory}}/dib-utils"
+          
+        - 
+          name: "copy dib-utils"
+          shell: 
+            chdir: "{{image_build_directory}}/dib-utils"
+            cmd: "(git pull )"
+          when: "p.stat.isdir is defined"
+        - 
+          name: "git clone dib-utils"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone https://github.com/openstack/dib-utils.git"
+          when: "p.stat.isdir is not defined"
+        - 
+          name: "Check if visibility exists"
+          register: p
+          stat: "path={{image_build_directory}}/visibility"
+        - 
+          name: "copy visibility"
+          shell: 
+            chdir: "{{image_build_directory}}/visibility"
+            cmd: "(git pull )"
+          when: "p.stat.isdir is defined"
+        - 
+          name: "git clone visibility"
+          shell: 
+            chdir: "{{image_build_directory}}"
+            cmd: "git clone https://{{git_username}}:{{git_password}}@github.com/oneconvergence/visibility.git -b master"
+          when: "p.stat.isdir is not defined"
+        - 
+          name: "Copy JSON file for visibility to build directory"
+          template: "src=config/conf_visibility.j2 dest={{image_build_directory}}/nsd-build/tools/image_builder/dib/conf_visibility.json"
+        # - 
+        #   args: 
+        #   #  chdir: "{{image_build_directory}}/group-based-policy/gbpservice/contrib/nfp/tools/"
+        #     chdir: "{{image_build_directory}}/nsd-gbp/gbpservice/contrib/nfp/tools/"
+        #   command: "python setup_nfp.py --build-controller-vm"
+        #   name: "build nfp configurator"
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "Copy JSON file for haproxy to  build directory"
+          shell: "cp conf_configurator.json conf_configurator_temp.json"
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-username NSD controller"
+          shell: "sed -i 's/\"username\":.*/\"username\":\"'{{git_username}}'\",/' conf_configurator_temp.json"
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-password NSD controller"
+          shell: "sed -i 's/\"password\":.*/\"password\":\"'{{git_password}}'\",/' conf_configurator_temp.json"
+
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-branch for NSD controller"
+          shell: "sed -i 's/\"branch\":.*/\"branch\":\"'{{nsd_gbp_branch}}'\"/' conf_configurator_temp.json"
+
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          command: "python build_image.py conf_configurator_temp.json"
+          name: "build NSD controller"
+
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "remove temporary configurator JSON file"
+          shell: "rm conf_configurator_temp.json"
+
+        - 
+          args:
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "Copy JSON file for haproxy to  build directory"
+          shell: "cp conf_haproxy.json conf_haproxy_temp.json"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-username HAproxy"
+          shell: "sed -i 's/\"username\":.*/\"username\":\"'{{git_username}}'\",/' conf_haproxy_temp.json"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-password HAproxy"
+          shell: "sed -i 's/\"password\":.*/\"password\":\"'{{git_password}}'\",/' conf_haproxy_temp.json"
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-branch for HAproxy"
+          shell: "sed -i 's/\"branch\":.*/\"branch\":\"'{{service_vm_agents_branch}}'\"/' conf_haproxy_temp.json"
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          command: "python build_image.py conf_haproxy_temp.json"
+          name: "build HAproxy"
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "remove temporary haproxy JSON file"
+          shell: "rm conf_haproxy_temp.json" 
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "Creating temporary vyos JSON file"
+          shell: "cp conf_vyos.json conf_vyos_temp.json"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-username vyos"
+          shell: "sed -i 's/\"username\":.*/\"username\":\"'{{git_username}}'\",/' conf_vyos_temp.json"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-password  vyos"
+          shell: "sed -i 's/\"password\":.*/\"password\":\"'{{git_password}}'\",/' conf_vyos_temp.json"
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "pass git-branch for  vyos"
+          shell: "sed -i 's/\"branch\":.*/\"branch\":\"'{{service_vm_agents_branch}}'\"/' conf_vyos_temp.json"
+
+        - name: "temp fix remove service-vm-agents directory from nsd-build"
+          shell: "rm -rf /opt/nfp-build/nsd-build/tools/image_builder/git/service-vm-agents/"
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          command: "python build_image.py conf_vyos_temp.json"
+          name: "build vyos"
+
+        - 
+          args: 
+            chdir: "{{image_build_directory}}/nsd-build/tools/image_builder/"
+          name: "remove temporary vyos json file"
+          shell: "rm conf_vyos_temp.json"
+
+        - 
+          find: "paths=\"{{image_build_directory}}/nsd-build/tools/image_builder/output\" patterns=\"*haproxy*.qcow2\""
+          name: "get the haproxy files"
+          register: haproxy_name
+        # - 
+        #   #find: "paths=\"{{image_build_directory}}/group-based-policy/gbpservice/gbpservice/contrib/nfp/tools/image_builder/output/\" patterns=\"*configurator*.qcow2\""
+        #   find: "paths=\"{{image_build_directory}}/nsd-gbp/gbpservice/contrib/nfp/tools/image_builder/output/\" patterns=\"*configurator*.qcow2\""
+        #   name: "get the configurator files"
+        #   register: configurator_name
+        - 
+          find: "paths=\"{{image_build_directory}}/nsd-build/tools/image_builder/output/\" patterns=\"*configurator*.qcow2\""
+          name: "get the nsd configurator files"
+          register: nsd_configurator_name
+        - 
+          find: "paths=\"{{image_build_directory}}/nsd-build/tools/image_builder/output/\" recurse=yes patterns=\"*vyos*qcow2\""
+          name: "get the vyos files"
+          register: vyos_name
+        - 
+          debug: "var=vyos_name.files[0].path"
+        - 
+          debug: "var=configurator_name.files[0].path"
+        - 
+          debug: "var=haproxy_name.files[0].path"
+        - 
+          debug: "var=nsd_configurator_name.files[0].path"
+        - 
+          command: "{{ item }}"
+          name: "move image files to Latest image directory"
+          with_items: 
+            - "mv {{haproxy_name.files[0].path}} {{image_install_directory}}/haproxy_lbaasv1.qcow2"
+           # - "mv {{configurator_name.files[0].path}} {{image_install_directory}}/nfp_configurator.qcow2"
+            - "mv {{nsd_configurator_name.files[0].path}} {{image_install_directory}}/nsd_controller.qcow2"
+            - "mv {{vyos_name.files[0].path}} {{image_install_directory}}/vyos.qcow2"
+            - "cp {{asav_lbaasv2_path}}/asav.qcow2 {{image_install_directory}}/asav.qcow2"
+            - "cp {{asav_lbaasv2_path}}/haproxy_lbaasv2.qcow2 {{image_install_directory}}/haproxy_lbaasv2.qcow2"
+
+        - name: "copy keys to Latest image directory"
+          shell: "cp {{image_build_directory}}/nsd-build/tools/image_builder/output/*.key {{image_install_directory}}"
+      when: "build_images == 'true'"
+

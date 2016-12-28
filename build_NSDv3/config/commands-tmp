@@ -1,0 +1,3 @@
+#Build NFP V1 Upgrade Tarball
+cd /nfp
+git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-gbp.git -b master

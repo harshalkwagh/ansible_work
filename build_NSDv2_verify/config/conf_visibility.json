@@ -1,0 +1,27 @@
+{
+    "git":
+        {
+            "username":"pvellanki",
+            "password":"1hyderabad",
+            "tag":"4.0",
+            "rel": 0,
+            "git_path_service-controller":["/opt/nfp-build/service-controller", "sc-1.0-SG-dib"],
+            "git_path_visibility":["/opt/nfp-build/visibility", "master"],
+            "git_path_group-based-policy":["/opt/nfp-build/group-based-policy", "liberty_nfp_14_june_2016_oslo_perf_patches"]
+        },
+    "dib":
+        {
+            "image_size":10,
+	    "elements": ["visibility", "root-passwd"],
+            "root_pswd":"oc@sc!23;)",
+            "offline": true
+        },
+    "ubuntu_release":
+        {
+	    "release":"trusty"
+        },
+    "url":
+        {
+            "DOCKER_IMAGES_URL":"http://192.168.100.50/docker_images/"
+        }
+}

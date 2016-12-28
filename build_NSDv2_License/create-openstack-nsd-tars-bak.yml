@@ -1,0 +1,95 @@
+---
+-
+  hosts: build
+  sudo: true
+  tasks:
+    -
+      block:
+        - 
+          name: "get the latest image directory"
+          register: image_dir
+          shell: "ls -t {{images_directory}}| grep images | sed -n '1p'"
+        - 
+          debug: "msg={{image_dir.stdout}}"
+        - set_fact: "image_dir={{images_directory}}/\"{{image_dir.stdout}}\""
+
+        - 
+          find: "paths={{image_dir.stdout}} patterns=\"*openstack-nfp*\" recurse=yes"
+          name: "Find the openstack-nfp tar"
+          register: openstack_nfp_tar_path
+
+        - 
+          debug: "msg={{openstack_nfp_tar_path.files[0].path}}"
+
+        - 
+          find: "paths={{image_dir.stdout}} patterns=\"*openstack-nsd*\" recurse=yes"
+          name: "Find the openstack-nsd rpm "
+          register: openstack_nsd_rpm_path
+        - 
+          debug: "msg={{openstack_nsd_rpm_path.files[0].path}}"
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "build openstack-nsd-packages tar"
+          shell: "tar -czf \"{{openstack_nfp_tar_path.files[0].path}}\" \"{{openstack_nsd_rpm_path.files[0].path}}\" openstack-nsd-packages-{{nsd_version}}.tar.gz"
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "create NSD images directory structure"
+          shell: "mkdir -p NSD_Images_\"{{nsd_version}}\"/{images,service_images}"
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "copy nsd_controller qcow image into NSD_images/images"
+          copy: src="nsd_controller.qcow2" dest="{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/images/"
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "copy vyos haproxy asav image into NSD_images/service_images"
+          copy: src="{{item}}" dest="{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/service_images/"
+          with_items:
+            - vyos.qcow2
+            - haproxy_lbaasv1.qcow2
+            - asav.qcow2
+            - haproxy_lbaasv2.qcow2
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "copy setup_nsd_images.sh into NSD_images"
+          copy: src="setup_nsd_images.sh" dest="{{image_dir.stdout}}/NSD_Images_{{nsd_version}}/"
+
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "build openstack-nsd-images tar"
+          shell: "tar -czf {{image_dir.stdout}}/NSD_Images_{{nsd_version}} openstack-nsd-images-{{nsd_version}}.tar.gz"
+
+        - 
+          name: "check whether nsd_install_directory exist or not"
+          register: p
+          stat: "path={{nsd_install_dir}}"
+        - 
+          debug: "msg=\"nsd_install directory already exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          file: "path=\"{{nsd_install_dir}}\" state=absent"
+          name: "delete existing nsd_install_dir"
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          name: "Create nsd_install_directory"
+          shell: "mkdir -p {{nsd_install_dir}}"
+ 
+        - 
+          args:
+            chdir: "{{image_dir.stdout}}"
+          name: "copy openstack_nsd tar files to nsd_tars"
+          copy: src="{{items}}" dest= "{{nsd_install_dir}}"
+          with_items:
+            - openstack-nsd-images-{{nsd_version}}.tar.gz
+            - openstack-nsd-packages-{{nsd_version}}.tar.gz
+      when: create_openstack_nsd_tars == "true"

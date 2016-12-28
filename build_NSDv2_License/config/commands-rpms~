@@ -1,0 +1,72 @@
+
+# git clone https://deekshithpatnala:deek123@github.com/oneconvergence/nsd-gbp.git -b stable/liberty
+# git clone https://deekshithpatnala:deek123@github.com/oneconvergence/gbp-packages.git -b liberty
+# cp -r gbp-packages/group-based-policy/rpm nsd-gbp/
+# cd nsd-gbp/
+# rm -rf gbpservice/nsd
+# chmod +x rpm/build-rpm.sh
+# ./rpm/build-rpm.sh
+
+
+
+#Build NFP V1 Upgrade Tarball
+cd /nfp
+git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-gbp.git -b nsd-v2-integration
+cd nsd-gbp/gbpservice/contrib/nfp/tools/
+bash prepare_nfp_v1_upgrade_package.sh sriharshabarkuru sri1990 nsd-v2-integration
+ls openstack-nfp.tgz
+cd /nfp
+mv /nfp/nsd-gbp/gbpservice/contrib/nfp/tools/openstack-nfp.tgz /nfp/.
+
+#Build nsd-rpm
+cd /nfp
+rm -rf nsd-gbp
+git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-gbp.git -b nsd-v2-integration
+git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-build.git -b master
+cp -r nsd-build/build-spec-files/nsd-gbp/rpm/ nsd-gbp/
+cd nsd-gbp/
+chmod +x rpm/build-nsd-rpm.sh
+./rpm/build-nsd-rpm.sh --build_version=20 --release_version=2.1.0
+cd /nfp
+mv /nfp/nsd-gbp/rpmbuild/RPMS/noarch/* /nfp/.
+
+# Build sslvpn-rmp
+cd /nfp
+#rm -rf nsd-gbp
+rm -rf nsd-build
+#git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-gbp.git -b ha-orch-integration
+git clone https://sriharshabarkuru:sri1990@github.com/oneconvergence/nsd-build.git -b master
+cp -r nsd-gbp/gbpservice/nsd/extensions/sslvpn/ /nfp
+cp -r nsd-build/build-spec-files/nsd-ssl-vpn/rpm/ /nfp
+chmod +x rpm/build-nsd-sslvpn-rpm.sh
+./rpm/build-nsd-sslvpn-rpm.sh --build_version=1 --release_version=2.3.4
+mv /nfp/rpmbuild/RPMS/noarch/* /nfp/nsd-sslvpn.rpm
+
+#cd /nfp
+#git clone https://github.com/noironetworks/gbp-rpm-spec.git -b liberty
+#git clone https://github.com/openstack/group-based-policy-ui.git -b stable/liberty
+#cp -r gbp-rpm-spec/group-based-policy-ui/rpm/ group-based-policy-ui/
+#cd group-based-policy-ui/
+#mv rpm/build-rpm.sh .
+#./build-rpm.sh 
+#mv /nfp/group-based-policy-ui/rpmbuild/RPMS/noarch/* /nfp/.
+
+#cd /nfp
+#git clone https://github.com/openstack/python-group-based-policy-client.git -b stable/liberty
+#cp -r gbp-rpm-spec/python-group-based-policy-client/rpm python-group-based-policy-client/
+#cd python-group-based-policy-client/
+#mv rpm/build-rpm.sh .
+#./build-rpm.sh 
+#mv /nfp/python-group-based-policy-client/rpmbuild/RPMS/noarch/* /nfp/.
+
+#cd /nfp
+#git clone https://github.com/openstack/group-based-policy-automation.git -b stable/liberty
+#cp -r gbp-rpm-spec/group-based-policy-automation/rpm/ group-based-policy-automation/
+#cd group-based-policy-automation/
+#mv rpm/build-rpm.sh .
+#./build-rpm.sh 
+#mv /nfp/group-based-policy-automation/rpmbuild/RPMS/noarch/* /nfp/.
+
+cd /nfp
+rm -rf group-based-policy gbp-rpm-spec nsd-gbp nsd-build gbp-packages
+

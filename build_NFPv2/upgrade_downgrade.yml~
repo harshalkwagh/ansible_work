@@ -1,0 +1,641 @@
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+#1;3409;0c Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NFP/NSD Install                                  # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+########################################################################    
+
+
+
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+- 
+  hosts: controller
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks: 
+    - 
+      set_fact: "build_server=\"{{groups['build'][0]}}\""
+    - 
+      debug: "msg=\"{{build_server}}\""
+    - 
+      block: 
+        - 
+          name: "check whether nsd_install_directory exist or not"
+          register: p
+          stat: "path={{nsd_install_dir}}"
+        - 
+          debug: "msg=\"nsd_install directory already exist\""
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          file: "path=\"{{nsd_install_dir}}\" state=absent"
+          name: "delete existing nsd_install_dir"
+          when: "p.stat.isdir is defined and p.stat.isdir"
+        - 
+          name: "Create nsd_install_directory"
+          shell: "mkdir -p {{nsd_install_dir}}"
+        - 
+          delegate_to: "{{build_server}}"
+          synchronize: "src={{openstack_nsd_packages_tar}} dest={{nsd_install_dir}}"
+        - 
+          find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-packages*\" recurse=yes"
+          name: "Find the openstack-nsd-packages tar "
+          register: nsd_packages_tar_path
+        - 
+          debug: "msg={{nsd_packages_tar_path.files[0].path}}"
+        - 
+          args: 
+            chdir: "{{nsd_install_dir}}"
+          name: "Extract openstack-nsd-packages tar"
+          shell: "tar -zxf {{nsd_packages_tar_path.files[0].path}}"
+
+        - 
+          find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-[0-9]*.rpm\" recurse=yes"
+          name: "Find the openstack-nsd rpm"
+          register: nsd_rpm_path
+        - 
+          debug: "msg={{nsd_rpm_path.files[0].path}}"
+        - 
+          name: "Install NSD RPM on OS controller"
+          yum: "name={{nsd_rpm_path.files[0].path}} state=present"
+
+        - 
+          find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-sslvpn*.rpm\" recurse=yes"
+          name: "Find the openstack-nsd-sslvpn rmp"
+          register: sslvpn_rpm_path
+        - 
+          debug: "msg={{sslvpn_rpm_path.files[0].path}}"
+        - 
+          name: "install sslvpn"
+          shell: "rpm -ivh --force {{sslvpn_rpm_path.files[0].path}}"
+
+        - 
+          delegate_to: "{{build_server}}"
+          synchronize: "src={{openstack_nsd_images_tar}} dest={{nsd_install_dir}}"
+        - 
+          find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-images*\" recurse=yes"
+          name: "Find the openstack-nsd-images tar rmp"
+          register: nsd_images_tar_path
+        - 
+          debug: "msg={{nsd_images_tar_path.files[0].path}}"
+        - 
+          args: 
+            chdir: "{{nsd_install_dir}}"
+          name: "Extract openstack-nsd-images tar"
+          shell: "tar -xzf {{nsd_images_tar_path.files[0].path}}"
+        - 
+          find: "paths={{nsd_install_dir}} patterns=*NSD_Images* recurse=yes file_type=directory"
+          name: "Find the NSD-images directory"
+          register: NSD_images_path
+        - 
+          debug: "msg={{NSD_images_path.files[0].path}}"
+        - 
+          find: "paths={{NSD_images_path.files[0].path}} patterns=\"*nsd_controller*.qcow2\" recurse=yes"
+          name: "Find the nsd_controller qcow image"
+          register: nsd_controller
+        - 
+          debug: "msg={{nsd_controller.files[0].path}}"
+        - 
+          args: 
+            chdir: "{{NSD_images_path.files[0].path}}"
+          name: "Upgrade Controller VM"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --upgrade-controller --nsd-controller-image-path {{nsd_controller.files[0].path}}"
+          register: cmd_log
+        - debug: msg="{{cmd_log.stdout_lines}}"
+
+        - 
+          name: "Configure NSD"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --configure-nsd"
+          register: cmd_log
+        - debug: msg="{{cmd_log.stdout_lines}}"
+
+        - 
+          name: "create HA resources"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --create-ha-resources"
+          register: cmd_log
+        - debug: msg="{{cmd_log.stdout_lines}}"
+
+        - 
+          args: 
+            chdir: "{{NSD_images_path.files[0].path}}"
+          name: "Upload service Images to OpenStack glance"
+          shell: "bash /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_images.sh --operation=upload --asav_path=service_images/asav.qcow2"
+          register: cmd_log
+        - debug: msg="{{cmd_log.stdout_lines}}"
+
+      when: (upgrade_to_nsd == 'true') and (downgrade_to_nfp == 'false')
+
+-
+  hosts: networknode
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks:
+    -
+      set_fact: "build_server={{groups['build'][0]}}"
+    -
+      debug: "msg={{build_server}}"
+    -
+      set_fact: "OSC={{ hostvars[groups['controller'][0]]['inventory_hostname']}}"
+    -
+      set_fact: "NC={{ hostvars[groups['networknode'][0]]['inventory_hostname']}}"
+    -
+      debug: "msg={{OSC}}"
+    -
+      debug: "msg={{NC}}"
+    -
+      block:
+        -
+          block:
+            -
+              name: "check whether nsd_install_directory exist or not"
+              register: p
+              stat: "path={{nsd_install_dir}}"
+            -
+              debug: "msg=\"Path exists and is a directory\""
+              when: "p.stat.isdir is defined and p.stat.isdir"
+            -
+              file: "path=\"{{nsd_install_dir}}\" state=absent"
+              name: "delete existing nsd_install_dir"
+              when: "p.stat.isdir is defined and p.stat.isdir"
+            -
+              name: "Create nsd_install_directory"
+              shell: "mkdir -p {{nsd_install_dir}}"
+            -
+              delegate_to: "{{build_server}}"
+              synchronize: "src={{openstack_nsd_packages_tar}} dest={{nsd_install_dir}}"
+            -
+              find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-packages*\" recurse=yes"
+              name: "Find the openstack-nsd-packages tar rmp"
+              register: nsd_packages_tar_path
+            -
+              debug: "msg={{nsd_packages_tar_path.files[0].path}}"
+            -
+              args:
+                chdir: "{{nsd_install_dir}}"
+              name: "Extract openstack-nsd-packages tar"
+              shell: "tar -zxf {{nsd_packages_tar_path.files[0].path}}"
+            -
+              find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd*.rpm\" recurse=yes"
+              name: "Find the openstack-nsd rmp"
+              register: nsd_rpm_path
+            -
+              debug: "msg={{nsd_rpm_path.files[0].path}}"
+            -
+              name: "Install NSD RPM on OS controller"
+              yum: "name={{nsd_rpm_path.files[0].path}} state=present"
+            - 
+              find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-sslvpn*.rpm\" recurse=yes"
+              name: "Find the openstack-nsd-sslvpn rmp"
+              register: sslvpn_rpm_path
+            - 
+              debug: "msg={{sslvpn_rpm_path.files[0].path}}"
+            - 
+              name: "install sslvpn"
+              shell: "rpm -ivh --force {{sslvpn_rpm_path.files[0].path}}"
+
+          when: "OSC != NC"
+
+        -
+          name: "Configure NFP proxy"
+          shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --configure-nfp-proxy  --controller nsd"
+
+        - 
+          block: 
+            - 
+              name: "Configure NFP proxy agent module"
+              shell: "crudini --set /etc/nfp.ini PROXY_AGENT nfp_modules_path `crudini --get /etc/nfp.ini PROXY_AGENT nfp_modules_path`,gbpservice.nsd.proxy_agent.modules"
+
+            - 
+              name: "Restart nfp_proxy_agent"
+              shell: "systemctl restart nfp_proxy_agent"
+
+          when: "ACI_setup == 'true'"
+      when: (upgrade_to_nsd == 'true') and (downgrade_to_nfp == 'false')
+
+- 
+  hosts: "controller[0]"
+  environment: 
+    OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+    OS_PASSWORD: "{{os_password}}"
+    OS_REGION_NAME: "{{os_region_name}}"
+    OS_TENANT_NAME: "{{os_tenant_name}}"
+    OS_USERNAME: "{{os_username}}"
+
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "find controller VM ip"
+          register: nsd_controller_VM_ip
+          shell: "neutron port-list | grep controller | cut -d'\"' -f8"
+        - 
+          debug: "msg=\"{{nsd_controller_VM_ip.stdout}}\""
+
+        - pause: seconds=100
+
+        - 
+          name: "check nsd_controllerVM status"
+          register: controller_status
+          shell: "nova list | grep nsd_controllerVM | cut -d' ' -f6"
+        - 
+          debug: msg="nsd_controllerVM status is {{controller_status.stdout}}"
+        - 
+          block: 
+            - name: "check wether npf-proxy is able to connect to nsd_controllerVM or not"
+              shell: ip netns exec nfp-proxy ncat -i 1s -v {{nsd_controller_VM_ip.stdout}} 8070 2>&1 | grep -c Connected
+              register: res
+              ignore_errors: true
+
+            - debug: "msg=\"INSTALLATION SUCCESS\""
+              when: "res.stdout == \"1\""
+
+            - fail:
+                msg: "ERROR: Unable to connect to controllerVM... Please Run Recovery playbook"
+              when: "res.stdout != \"1\""
+
+          when: "controller_status.stdout == \"ACTIVE\""
+
+        - fail:
+            msg: "ERROR: INSTALLATION DONE but nsd_controllerVM is NOT ACTIVE....  Please Run Recovery playbook"
+          when: "controller_status.stdout != \"ACTIVE\""
+
+      when: (upgrade_to_nsd == 'true') and (verify_nsd == 'true')
+
+##############
+
+# - 
+#   hosts: controller
+#   environment: 
+#     OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+#     OS_PASSWORD: "{{os_password}}"
+#     OS_REGION_NAME: "{{os_region_name}}"
+#     OS_TENANT_NAME: "{{os_tenant_name}}"
+#     OS_USERNAME: "{{os_username}}"
+
+#   tasks: 
+#     - 
+#       set_fact: "build_server=\"{{groups['build'][0]}}\""
+#     - 
+#       debug: "msg=\"{{build_server}}\""
+#     - 
+#       block: 
+#         - 
+#           name: "check whether nsd_install_directory exist or not"
+#           register: p
+#           stat: "path={{nsd_install_dir}}"
+#         - 
+#           debug: "msg=\"nsd_install directory exist\""
+#           when: "p.stat.isdir is defined and p.stat.isdir"
+#         -
+#           fail: "msg=\"nsd_install directory does not exist, cant do downgrade\""
+#           when: "p.stat.isdir is not defined"
+
+
+
+#         - 
+#           args: 
+#             chdir: "{{NSD_images_path.files[0].path}}"
+#           name: "Upload service Images to OpenStack glance"
+#           shell: "bash setup_nsd_images.sh --operation=upload --asav_path=service_images/asav.qcow2"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+
+
+
+
+
+
+#         - 
+#           find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-[0-9]*.rpm\" recurse=yes"
+#           name: "Find the openstack-nsd rpm"
+#           register: nsd_rpm_path
+#         - 
+#           debug: "msg={{nsd_rpm_path.files[0].path}}"
+#         - 
+#           name: "Install NSD RPM on OS controller"
+#           yum: "name={{nsd_rpm_path.files[0].path}} state=present"
+
+#         - 
+#           find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-sslvpn*.rpm\" recurse=yes"
+#           name: "Find the openstack-nsd-sslvpn rmp"
+#           register: sslvpn_rpm_path
+#         - 
+#           debug: "msg={{sslvpn_rpm_path.files[0].path}}"
+#         - 
+#           name: "install sslvpn"
+#           shell: "rpm -ivh --force {{sslvpn_rpm_path.files[0].path}}"
+
+#         - 
+#           delegate_to: "{{build_server}}"
+#           synchronize: "src={{openstack_nsd_images_tar}} dest={{nsd_install_dir}}"
+#         - 
+#           find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-images*\" recurse=yes"
+#           name: "Find the openstack-nsd-images tar rmp"
+#           register: nsd_images_tar_path
+#         - 
+#           debug: "msg={{nsd_images_tar_path.files[0].path}}"
+#         - 
+#           args: 
+#             chdir: "{{nsd_install_dir}}"
+#           name: "Extract openstack-nsd-images tar"
+#           shell: "tar -xzf {{nsd_images_tar_path.files[0].path}}"
+#         - 
+#           find: "paths={{nsd_install_dir}} patterns=*NSD_Images* recurse=yes file_type=directory"
+#           name: "Find the NSD-images directory"
+#           register: NSD_images_path
+#         - 
+#           debug: "msg={{NSD_images_path.files[0].path}}"
+#         - 
+#           find: "paths={{NSD_images_path.files[0].path}} patterns=\"*nsd_controller*.qcow2\" recurse=yes"
+#           name: "Find the nsd_controller qcow image"
+#           register: nsd_controller
+#         - 
+#           debug: "msg={{nsd_controller.files[0].path}}"
+#         - 
+#           args: 
+#             chdir: "{{NSD_images_path.files[0].path}}"
+#           name: "Upgrade Controller VM"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --upgrade-controller --nsd-controller-image-path {{nsd_controller.files[0].path}}"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+#         - 
+#           name: "Configure NSD"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --configure-nsd"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+#         - 
+#           name: "create HA resources"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --create-ha-resources"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+
+#       when: (upgrade_to_nsd == 'false') and (downgrade_to_nfp == 'true')
+
+# -
+#   hosts: networknode
+#   environment: 
+#     OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+#     OS_PASSWORD: "{{os_password}}"
+#     OS_REGION_NAME: "{{os_region_name}}"
+#     OS_TENANT_NAME: "{{os_tenant_name}}"
+#     OS_USERNAME: "{{os_username}}"
+
+#   tasks:
+#     -
+#       set_fact: "build_server={{groups['build'][0]}}"
+#     -
+#       debug: "msg={{build_server}}"
+#     -
+#       set_fact: "OSC={{ hostvars[groups['controller'][0]]['inventory_hostname']}}"
+#     -
+#       set_fact: "NC={{ hostvars[groups['network'][0]]['inventory_hostname']}}"
+#     -
+#       debug: "msg={{OSC}}"
+#     -
+#       debug: "msg={{NC}}"
+#     -
+#       block:
+#         -
+#           block:
+#             -
+#               name: "check whether nsd_install_directory exist or not"
+#               register: p
+#               stat: "path={{nsd_install_dir}}"
+#             -
+#               debug: "msg=\"Path exists and is a directory\""
+#               when: "p.stat.isdir is defined and p.stat.isdir"
+#             -
+#               file: "path=\"{{nsd_install_dir}}\" state=absent"
+#               name: "delete existing nsd_install_dir"
+#               when: "p.stat.isdir is defined and p.stat.isdir"
+#             -
+#               name: "Create nsd_install_directory"
+#               shell: "mkdir -p {{nsd_install_dir}}"
+#             -
+#               delegate_to: "{{build_server}}"
+#               synchronize: "src={{openstack_nsd_packages_tar}} dest={{nsd_install_dir}}"
+#             -
+#               find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-packages*\" recurse=yes"
+#               name: "Find the openstack-nsd-packages tar rmp"
+#               register: nsd_packages_tar_path
+#             -
+#               debug: "msg={{nsd_packages_tar_path.files[0].path}}"
+#             -
+#               args:
+#                 chdir: "{{nsd_install_dir}}"
+#               name: "Extract openstack-nsd-packages tar"
+#               shell: "tar -zxf {{nsd_packages_tar_path.files[0].path}}"
+#             -
+#               find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd*.rpm\" recurse=yes"
+#               name: "Find the openstack-nsd rmp"
+#               register: nsd_rpm_path
+#             -
+#               debug: "msg={{nsd_rpm_path.files[0].path}}"
+#             -
+#               name: "Install NSD RPM on OS controller"
+#               yum: "name={{nsd_rpm_path.files[0].path}} state=present"
+#             - 
+#               find: "paths={{nsd_install_dir}} patterns=\"*openstack-nsd-sslvpn*.rpm\" recurse=yes"
+#               name: "Find the openstack-nsd-sslvpn rmp"
+#               register: sslvpn_rpm_path
+#             - 
+#               debug: "msg={{sslvpn_rpm_path.files[0].path}}"
+#             - 
+#               name: "install sslvpn"
+#               shell: "rpm -ivh --force {{sslvpn_rpm_path.files[0].path}}"
+
+#           when: "OSC != NC"
+
+#         -
+#           name: "Configure NFP proxy"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd_advanced.py --configure-nfp-proxy  --controller nsd"
+
+#         - 
+#           block: 
+#             - 
+#               name: "Configure NFP proxy agent module"
+#               shell: "crudini --set /etc/nfp.ini PROXY_AGENT nfp_modules_path `crudini --get /etc/nfp.ini PROXY_AGENT nfp_modules_path`,gbpservice.nsd.proxy_agent.modules"
+
+#             - 
+#               name: "Restart nfp_proxy_agent"
+#               shell: "systemctl restart nfp_proxy_agent"
+
+#           when: "ACI_setup == 'true'"
+#       when: (upgrade_to_nsd == 'false') and (downgrade_to_nfp == 'true')
+
+
+
+
+
+
+
+
+
+
+
+        # - 
+        #   ignore_errors: true
+        #   name: "check whether default_ip_pool is already configured or not"
+        #   register: res
+        #   shell: "crudini --get /etc/neutron/neutron.conf group_policy_implicit_policy default_ip_pool"
+        # - 
+        #   debug: "msg= default_ip_pool is already configured and it is {{res.stdout}}"
+        #   when: "res.stdout != \"\""
+        # - 
+        #   name: "configure default ip pool"
+        #   shell: "crudini --set /etc/neutron/neutron.conf group_policy_implicit_policy default_ip_pool {{default_ip_pool}}"
+        #   when: "res.stdout == \"\""
+        # - 
+        #   ignore_errors: true
+        #   name: "check whether default_proxy_ip_pool is already configured or not"
+        #   register: res
+        #   shell: "crudini --get /etc/neutron/neutron.conf group_policy_implicit_policy default_proxy_ip_pool"
+        # - 
+        #   debug: "msg= default_proxy_ip_pool is already configured and it is {{res.stdout}}"
+        #   when: "res.stdout != \"\""
+        # - 
+        #   name: "configure default proxy ip pool"
+        #   shell: "crudini --set /etc/neutron/neutron.conf group_policy_implicit_policy default_proxy_ip_pool {{default_proxy_ip_pool}}"
+        #   when: "res.stdout == \"\""
+        # - 
+        #   name: "configure orchestrator"
+        #   shell: "python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --configure"
+        #   register: cmd_log
+        # - debug: msg="{{cmd_log.stdout_lines}}"
+
+        # - 
+        #   name: "configure Remote VPN Client CIDR in nfp.ini"
+        #   shell: "crudini --set /etc/nfp.ini CONFIG_ORCHESTRATOR client_address_pool_cidr \"{{client_address_pool_cidr}}\""
+        # - 
+        #   name: "configure Heat URI in nfp.ini"
+        #   shell: "crudini --set /etc/nfp.ini heat_driver heat_uri \"{{heat_uri}}\""
+
+        # - 
+        #   name: "Configure NSD"
+        #   shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd.py --configure-nsd"
+        #   register: cmd_log
+        # - debug: msg="{{cmd_log.stdout_lines}}"
+
+        # - 
+        #   name: "Add different host filter configuration in nova.conf"
+        #   shell: "crudini --set /etc/nova/nova.conf DEFAULT scheduler_default_filters \"`crudini --get /etc/nova/nova.conf DEFAULT scheduler_default_filters`,DifferentHostFilter\""
+        # - 
+        #   name: "Restart Nova"
+        #   shell: "openstack-service restart nova"
+
+# - 
+#   hosts: "controller[0]"
+#   environment: 
+#     OS_AUTH_URL: "http://{{ inventory_hostname }}:5000/v2.0"
+#     OS_PASSWORD: "{{os_password}}"
+#     OS_REGION_NAME: "{{os_region_name}}"
+#     OS_TENANT_NAME: "{{os_tenant_name}}"
+#     OS_USERNAME: "{{os_username}}"
+
+#   tasks: 
+#     - 
+#       block: 
+#         - 
+#           set_fact: "build_server={{groups['build'][0]}}"
+#         - 
+#           name: "start orchestrator"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --enable-orchestrator"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+#         - 
+#           ignore_errors: true
+#           name: "check whether heat_stack_role is already added or not"
+#           register: res
+#           shell: "openstack user role list | grep neutron | grep -c heat_stack_owner"
+#         - 
+#           debug: "msg=\"heat stack role is already added\""
+#           when: "res.rc != 1"
+#         - 
+#           name: "add heat_stack_role"
+#           shell: "openstack role add --project services --user neutron heat_stack_owner"
+#           when: "res.rc == 1"
+#         - 
+#           name: "create nfp resources"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --create-resources"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+#         - 
+#           name: "create HA resources"
+#           shell: "python /usr/lib/python2.7/site-packages/gbpservice/nsd/tools/setup_nsd.py --create-ha-resources"
+#           register: cmd_log
+#         - debug: msg="{{cmd_log.stdout_lines}}"
+
+#         - 
+#           delegate_to: "{{build_server}}"
+#           synchronize: "src={{openstack_nsd_images_tar}} dest={{nsd_install_dir}}"
+#        - 
+#           name: "find controller VM ip"
+#           register: nsd_controller_VM_ip
+#           shell: "neutron port-list | grep controller | cut -d'\"' -f8"
+#         - 
+#           debug: "msg=\"{{nsd_controller_VM_ip.stdout}}\""
+#         - 
+#           set_fact: "controller_ip={{ nsd_controller_VM_ip.stdout }}"
+#         - 
+#           debug: "msg={{controller_ip}}"
+#       when: "deploy_nsd == 'true'"
+
+        # -
+        #   name: "Configure NSD modules"
+        #   shell: "crudini --set /etc/nfp.ini PROXY_AGENT nfp_modules_path `crudini --get /etc/nfp.ini PROXY_AGENT nfp_modules_path`,gbpservice.nsd.proxy_agent.modules"
+        # -
+        #   name: "Enable nfp proxy. This enables and runs NFP proxy component"
+        #   shell: "python /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/tools/setup_nfp.py --enable-proxy"
+        # -
+        #   name: "Update NSD Controller VM IP in /etc/nfp.ini file"
+        #   shell: "crudini --set /etc/nfp.ini PROXY nfp_controller_ip {{hostvars[groups['controller'][0]]['controller_ip'] }}"
+        # -
+        #   name: "restart proxy services"
+        #   shell: "systemctl restart nfp_proxy"
+        # -
+        #   name: "restart proxy_agent services"
+        #   shell: "systemctl restart nfp_proxy_agent"

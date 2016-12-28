@@ -1,0 +1,105 @@
+#                                                                                                                   
+# One Convergence, Inc. CONFIDENTIAL                                                                                
+# Copyright (c) 2012-2014, One Convergence, Inc., USA                                                               
+# All Rights Reserved.                                                                                              
+#                                                                                                                   
+# All information contained herein is, and remains the property of                                                  
+# One Convergence, Inc. and its suppliers, if any. The intellectual and                                             
+# technical concepts contained herein are proprietary to One Convergence,                                           
+# Inc. and its suppliers.                                                                                           
+#                                                                                                                   
+# Dissemination of this information or reproduction of this material is                                             
+# strictly forbidden unless prior written permission is obtained from
+# One Convergence, Inc., USA
+#
+
+########################################################################
+#    Project: Ansible NSD Install                                      # 
+#    Team/Authors:                                                     #                                            
+#            Venkat Akkina [venkat.akkina@oneconvergence.com]          #                                            
+#            Harshal Wagh  [harshal.wagh@oneconvergence.com]           #                                            
+#            Deekshith Patnala [deekshith.patnala@oneconvergence.com]  #                                            
+########################################################################    
+
+
+
+--- 
+- 
+  hosts: build
+  sudo: true
+  tasks: 
+    - 
+      block: 
+        - 
+          name: "get timestamp"
+          register: ts
+          shell: "date +%F_%T | tr : -"
+        - 
+          set_fact: "timestamp={{ts.stdout}}"
+      when: "timestamp is not defined"
+    - 
+      debug: "msg={{timestamp}}"
+- 
+  hosts: deploy
+  sudo: true
+  tasks: 
+    - 
+      set_fact: "timestamp={{hostvars[groups['build'][0]].timestamp}}"
+    - 
+      debug: "msg={{timestamp}}"
+    - 
+      block: 
+        - 
+          name: "get gbp ID"
+          register: snapid
+          shell: "btrfs subvolume list / | grep -i \"{{gbp_snapshot_name}}$\" | awk '{print $2}'"
+        - 
+          debug: "var={{snapid.stdout}}"
+        - 
+          name: "set default to gbp"
+          shell: "btrfs subvolume set-default {{snapid.stdout}} /"
+        - 
+          name: sync
+          shell: "(sync && sync && sync)"
+        - 
+          async: 1
+          ignore_errors: true
+          name: "restart machine"
+          poll: 0
+          shell: "sleep 2 && shutdown -r now \"Ansible updates triggered\""
+          sudo: true
+        - 
+          local_action: "wait_for host={{ inventory_hostname }} search_regex=OpenSSH delay=10 port=22 timeout=1000"
+          name: "Wait for the server to finish rebooting"
+          sudo: false
+
+        - name: delete existing nfp snapshot
+          shell: "btrfs subvolume list / | grep -i \"NFPv2-nfp$\" | awk '{print $9}' | sed 's_^_/_' | xargs btrfs subvolume delete"
+          ignore_errors: true
+        - 
+          name: "take snapshot"
+          shell: "btrfs subvolume snapshot / /snaps/NFPv2-nfp"
+        - 
+          name: snapid
+          register: snapid
+          shell: "btrfs subvolume show /snaps/NFPv2-nfp | grep -E \"Object ID:\" | awk '{print $3}'"
+        - 
+          debug: "var={{snapid.stdout}}"
+        - 
+          name: "snap set default"
+          shell: "btrfs subvolume set-default {{snapid.stdout}} /"
+        - 
+          name: sync
+          shell: "(sync && sync && sync)"
+        - 
+          async: 1
+          ignore_errors: true
+          name: "restart machine"
+          poll: 0
+          shell: "sleep 2 && shutdown -r now \"Ansible updates triggered\""
+          sudo: true
+        - 
+          local_action: "wait_for host={{ inventory_hostname }} search_regex=OpenSSH delay=10 port=22 timeout=1000"
+          name: "Wait for the server to finish rebooting"
+          sudo: false
+      when: "deploy_snapshot == 'true' and nfp_snapshot == 'true'"
